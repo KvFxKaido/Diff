@@ -28,7 +28,7 @@ export function getDefaultModel(type: AIProviderType): AIModel | undefined {
 
 export async function analyzePR(
   prData: PRData,
-  providerType: AIProviderType,
+  _providerType: AIProviderType,
   modelId?: string,
 ): Promise<AnalysisResult> {
   return analyzePRWithOllamaCloud(prData, modelId || 'gemini3:latest');
