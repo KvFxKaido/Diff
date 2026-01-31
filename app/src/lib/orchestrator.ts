@@ -106,7 +106,15 @@ export async function streamChat(
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`API ${response.status}: ${body.slice(0, 300)}`);
+      // Try to extract a meaningful error from JSON response
+      let errorMsg = `API ${response.status}`;
+      try {
+        const parsed = JSON.parse(body);
+        errorMsg = parsed.error || errorMsg;
+      } catch {
+        if (body) errorMsg += `: ${body.slice(0, 200)}`;
+      }
+      throw new Error(errorMsg);
     }
 
     const reader = response.body?.getReader();
