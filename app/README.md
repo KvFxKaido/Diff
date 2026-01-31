@@ -1,11 +1,11 @@
 # Diff — AI-Powered GitHub PR Analyzer
 
-A client-side web app that analyzes GitHub Pull Requests using Google's Gemini API, providing AI-generated code review insights including risk assessment, diff notes, and complexity hotspots.
+A client-side web app that analyzes GitHub Pull Requests using Ollama Cloud, providing AI-generated code review insights including risk assessment, diff notes, and complexity hotspots.
 
 ## Features
 
 - **PR Analysis** — Enter a GitHub repo and PR number to fetch PR data and diffs via the GitHub API
-- **AI Code Review** — Analyzes code changes with Gemini 1.5 Flash, returning structured feedback
+- **AI Code Review** — Analyzes code changes with Ollama Cloud, returning structured feedback
 - **Risk Assessment** — Identifies risks categorized by severity (low / medium / high) and type (security, breaking changes, testing gaps)
 - **Diff Notes** — Annotated observations on specific files and lines, classified as logic, mechanical, or style
 - **Hotspot Detection** — Flags files with high complexity or critical changes
@@ -21,7 +21,7 @@ A client-side web app that analyzes GitHub Pull Requests using Google's Gemini A
 | Styling | Tailwind CSS 3, Radix UI primitives |
 | UI Components | shadcn/ui-based component library (60+ components) |
 | Forms | React Hook Form, Zod validation |
-| APIs | GitHub REST API, Google Gemini API |
+| APIs | GitHub REST API, Ollama Cloud |
 
 ## Getting Started
 
@@ -42,10 +42,11 @@ npm install
 Create a `.env` file in the `app/` directory:
 
 ```env
-VITE_GITHUB_TOKEN=your_github_token       # Optional — increases GitHub API rate limits
-VITE_GITHUB_CLIENT_ID=your_client_id      # Optional — enables GitHub OAuth login
+VITE_OLLAMA_CLOUD_API_KEY=your_api_key         # Required for AI analysis
+VITE_OLLAMA_CLOUD_API_URL=your_api_url         # Optional — defaults to Ollama Cloud
+VITE_GITHUB_TOKEN=your_github_token            # Optional — increases GitHub API rate limits
+VITE_GITHUB_CLIENT_ID=your_client_id           # Optional — enables GitHub OAuth login
 VITE_GITHUB_OAUTH_PROXY=https://your-proxy.example.com/oauth/github
-VITE_GEMINI_API_KEY=your_gemini_api_key   # Required for real AI analysis
 ```
 
 Without these keys the app runs in demo mode using mock data.
@@ -83,10 +84,12 @@ app/
 │   ├── components/ui/      # Reusable UI components (shadcn/ui)
 │   ├── hooks/
 │   │   ├── useGitHub.ts    # GitHub API data fetching
-│   │   ├── useAnalysis.ts  # Gemini analysis orchestration
+│   │   ├── useAnalysis.ts  # Analysis orchestration
 │   │   └── use-mobile.ts   # Mobile viewport detection
 │   ├── lib/
-│   │   ├── gemini.ts       # Gemini API client & prompt engineering
+│   │   ├── ollama.ts       # Ollama Cloud API client
+│   │   ├── providers.ts    # AI provider config and routing
+│   │   ├── prompts.ts      # Analysis prompts and mock data
 │   │   └── utils.ts        # Utility helpers
 │   ├── sections/
 │   │   ├── HomeScreen.tsx   # Input form (repo + PR number)
@@ -105,7 +108,7 @@ app/
 
 1. **Input** — User provides a GitHub repository (`owner/repo`) and PR number
 2. **Fetch** — The app calls the GitHub API to retrieve PR metadata, changed files, and the unified diff
-3. **Analyze** — The diff (capped at 10k characters) is sent to Gemini 1.5 Flash with a structured review prompt
+3. **Analyze** — The diff (capped at 10k characters) is sent to Ollama Cloud with a structured review prompt
 4. **Display** — Results are rendered in collapsible sections: summary, risks, diff notes, and hotspots
 
 ## License

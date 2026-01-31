@@ -10,7 +10,7 @@ export function useAnalysis() {
   const runAnalysis = useCallback(
     async (
       prData: PRData,
-      providerType: AIProviderType = 'gemini',
+      providerType: AIProviderType = 'ollama-cloud',
       modelId?: string,
     ): Promise<AnalysisResult | null> => {
       setLoading(true);

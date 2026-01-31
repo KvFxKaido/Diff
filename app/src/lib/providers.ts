@@ -1,17 +1,7 @@
 import type { AIProviderType, AIProviderConfig, AIModel, PRData, AnalysisResult } from '@/types';
-import { analyzePRWithGemini } from '@/lib/gemini';
 import { analyzePRWithOllamaCloud } from '@/lib/ollama';
 
 export const PROVIDERS: AIProviderConfig[] = [
-  {
-    type: 'gemini',
-    name: 'Google Gemini',
-    description: 'Google Gemini 1.5 Flash',
-    envKey: 'VITE_GEMINI_API_KEY',
-    models: [
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', provider: 'gemini' },
-    ],
-  },
   {
     type: 'ollama-cloud',
     name: 'Ollama Cloud',
@@ -41,11 +31,5 @@ export async function analyzePR(
   providerType: AIProviderType,
   modelId?: string,
 ): Promise<AnalysisResult> {
-  switch (providerType) {
-    case 'ollama-cloud':
-      return analyzePRWithOllamaCloud(prData, modelId || 'gemini3:latest');
-    case 'gemini':
-    default:
-      return analyzePRWithGemini(prData);
-  }
+  return analyzePRWithOllamaCloud(prData, modelId || 'gemini3:latest');
 }
