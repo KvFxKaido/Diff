@@ -40,7 +40,12 @@ Design Principles (Non‑Negotiable)
 
 Agent Roles (Locked)
 
-All agents run on Ollama Cloud models. Specific model assignments will evolve as the Ollama Cloud catalog changes. The roles do not change.
+All agents run on Ollama Cloud models. The roles do not change. Models can be swapped as the catalog evolves.
+
+Current Model Assignments:
+- Orchestrator → Kimi K2.5 (256K context, agent swarm decomposition)
+- Coder → GLM 4.7 (198K context, SWE‑bench leader, agentic coding)
+- Auditor → Gemini 3 Pro Preview (1M context, SOTA reasoning)
 
 Orchestrator
 

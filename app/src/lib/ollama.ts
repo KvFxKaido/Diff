@@ -3,11 +3,11 @@ import { MOCK_ANALYSIS, buildPrompt } from '@/lib/prompts';
 
 const OLLAMA_CLOUD_API_KEY = import.meta.env.VITE_OLLAMA_CLOUD_API_KEY || '';
 const OLLAMA_CLOUD_API_URL =
-  import.meta.env.VITE_OLLAMA_CLOUD_API_URL || 'https://api.ollama.com/v1/chat/completions';
+  import.meta.env.VITE_OLLAMA_CLOUD_API_URL || 'https://ollama.com/v1/chat/completions';
 
 export async function analyzePRWithOllamaCloud(
   prData: PRData,
-  model = 'gemini3:latest',
+  model = 'gemini-3-pro-preview:latest',
 ): Promise<AnalysisResult> {
   if (!OLLAMA_CLOUD_API_KEY) {
     console.log('No Ollama Cloud API key found, returning mock analysis');

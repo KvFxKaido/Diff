@@ -1,18 +1,35 @@
-import type { AIProviderType, AIProviderConfig, AIModel, PRData, AnalysisResult } from '@/types';
+import type { AIProviderType, AIProviderConfig, AIModel, AgentRole, PRData, AnalysisResult } from '@/types';
 import { analyzePRWithOllamaCloud } from '@/lib/ollama';
 
 export const PROVIDERS: AIProviderConfig[] = [
   {
     type: 'ollama-cloud',
     name: 'Ollama Cloud',
-    description: 'Ollama Cloud with Gemini 3 models',
+    description: 'Role-based agent models via Ollama Cloud',
     envKey: 'VITE_OLLAMA_CLOUD_API_KEY',
     envUrl: 'VITE_OLLAMA_CLOUD_API_URL',
     models: [
-      { id: 'gemini3:latest', name: 'Gemini 3', provider: 'ollama-cloud' },
-      { id: 'gemini3:12b', name: 'Gemini 3 12B', provider: 'ollama-cloud' },
-      { id: 'gemini3:4b', name: 'Gemini 3 4B', provider: 'ollama-cloud' },
-      { id: 'gemini3:1b', name: 'Gemini 3 1B', provider: 'ollama-cloud' },
+      {
+        id: 'gemini-3-pro-preview:latest',
+        name: 'Gemini 3 Pro (Auditor)',
+        provider: 'ollama-cloud',
+        role: 'auditor',
+        context: 1_000_000,
+      },
+      {
+        id: 'kimi-k2.5:cloud',
+        name: 'Kimi K2.5 (Orchestrator)',
+        provider: 'ollama-cloud',
+        role: 'orchestrator',
+        context: 256_000,
+      },
+      {
+        id: 'glm-4.7:cloud',
+        name: 'GLM 4.7 (Coder)',
+        provider: 'ollama-cloud',
+        role: 'coder',
+        context: 198_000,
+      },
     ],
   },
 ];
@@ -26,10 +43,18 @@ export function getDefaultModel(type: AIProviderType): AIModel | undefined {
   return provider?.models[0];
 }
 
+export function getModelForRole(
+  type: AIProviderType,
+  role: AgentRole,
+): AIModel | undefined {
+  const provider = getProvider(type);
+  return provider?.models.find((m) => m.role === role);
+}
+
 export async function analyzePR(
   prData: PRData,
   _providerType: AIProviderType,
   modelId?: string,
 ): Promise<AnalysisResult> {
-  return analyzePRWithOllamaCloud(prData, modelId || 'gemini3:latest');
+  return analyzePRWithOllamaCloud(prData, modelId || 'gemini-3-pro-preview:latest');
 }

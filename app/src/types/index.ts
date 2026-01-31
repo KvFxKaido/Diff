@@ -1,11 +1,15 @@
 export type AppState = 'home' | 'running' | 'results';
 
+export type AgentRole = 'orchestrator' | 'coder' | 'auditor';
+
 export type AIProviderType = 'ollama-cloud';
 
 export interface AIModel {
   id: string;
   name: string;
   provider: AIProviderType;
+  role?: AgentRole;
+  context?: number;
 }
 
 export interface AIProviderConfig {

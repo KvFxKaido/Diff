@@ -13,7 +13,7 @@ function App() {
   const [currentInput, setCurrentInput] = useState<PRInput | null>(null);
   const [, setCurrentPRData] = useState<PRData | null>(null);
   const [provider, setProvider] = useState<AIProviderType>('ollama-cloud');
-  const [modelId, setModelId] = useState('gemini3:latest');
+  const [modelId, setModelId] = useState('gemini-3-pro-preview:latest');
 
   const { fetchPRData, loading: githubLoading } = useGitHub();
   const { runAnalysis, result: analysisResult, reset: resetAnalysis } = useAnalysis();
