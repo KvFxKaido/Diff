@@ -261,6 +261,63 @@ Clear boundary between review (mobile) and action (desktop)
 
 ---
 
+Phase 2.5 — GitSync & Repo Awareness
+
+Goal: Enable lightweight repository synchronization and awareness so the app can replace GitSync and reduce dependence on the GitHub mobile app.
+
+Scope (Mobile‑First):
+
+Periodic pull of:
+
+Recent commits
+
+Open PRs
+
+Branch heads
+
+
+Local cache of repo metadata for offline viewing
+
+Manual "Sync Now" action (no background polling)
+
+
+Features:
+
+Repo list with last‑sync timestamp
+
+PR status overview (open / draft / merged)
+
+Commit summaries since last sync
+
+Diff previews (read‑only, mobile‑optimized)
+
+
+Agent Use:
+
+Gemini: not used (no analysis during sync)
+
+Claude: optional summarization of "what changed since last check"
+
+
+Constraints:
+
+Read‑only operations only
+
+No push, merge, or write actions
+
+Explicit user‑initiated sync
+
+
+Exit Criteria:
+
+App can replace GitSync for passive repo monitoring
+
+App is useful offline for recent state inspection
+
+
+
+---
+
 Explicit Non‑Goals
 
 Full IDE replacement
