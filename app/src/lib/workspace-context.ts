@@ -48,12 +48,6 @@ function formatRepoFull(repo: RepoWithActivity): string {
   return parts.join('\n');
 }
 
-function formatRepoCompact(repo: RepoWithActivity): string {
-  const lang = repo.language ? ` (${repo.language})` : '';
-  const prs = repo.activity.open_prs > 0 ? ` ${repo.activity.open_prs}PR` : '';
-  return `• ${repo.full_name}${lang}${prs} — ${relativeTime(repo.pushed_at)}`;
-}
-
 export function buildWorkspaceContext(
   repos: RepoWithActivity[],
   activeRepo?: ActiveRepo | null,

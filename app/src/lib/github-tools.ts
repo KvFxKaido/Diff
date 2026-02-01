@@ -6,7 +6,7 @@
  * result back into the conversation as a synthetic message.
  */
 
-import type { ToolExecutionResult, PRCardData, PRListCardData, CommitListCardData, FileCardData, BranchListCardData } from '@/types';
+import type { ToolExecutionResult, PRCardData, PRListCardData, CommitListCardData, BranchListCardData } from '@/types';
 
 const OAUTH_STORAGE_KEY = 'github_access_token';
 const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
