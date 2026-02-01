@@ -1,8 +1,8 @@
 {
   "name": "diff",
-  "main": "./worker.ts",
+  "main": "./app/worker.ts",
   "compatibility_date": "2026-02-01",
   "assets": {
-    "directory": "./dist"
+    "directory": "./app/dist"
   }
 }
