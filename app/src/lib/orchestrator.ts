@@ -291,8 +291,6 @@ export async function streamMoonshotChat(
       }),
     });
 
-    console.log(`[Diff] Moonshot response: ${response.status} ${response.statusText}, content-type: ${response.headers.get('content-type')}`);
-
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       let detail = '';
@@ -311,8 +309,9 @@ export async function streamMoonshotChat(
       throw new Error('No response body');
     }
 
-    // SSE format: lines starting with "data: " followed by JSON
-    // Stream ends with "data: [DONE]"
+    // SSE format: lines starting with "data:" followed by JSON
+    // Kimi sends "data:{...}" (no space); OpenAI sends "data: {...}" (with space)
+    // Stream ends with "data: [DONE]" or "data:[DONE]"
     const decoder = new TextDecoder();
     let buffer = '';
     const parser = createThinkTokenParser(onToken, onThinkingToken);
@@ -321,52 +320,50 @@ export async function streamMoonshotChat(
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      console.log(`[Diff] SSE chunk (${chunk.length} chars):`, chunk.slice(0, 200));
-      buffer += chunk;
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') {
-          if (trimmed === 'data: [DONE]') {
-            console.log('[Diff] SSE stream complete ([DONE])');
-            parser.flush();
-            onDone();
-            return;
-          }
-          continue;
+        if (!trimmed) continue;
+
+        // Check for stream termination: "data: [DONE]" or "data:[DONE]"
+        if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') {
+          parser.flush();
+          onDone();
+          return;
         }
 
-        // SSE lines start with "data: "
-        if (!trimmed.startsWith('data: ')) {
-          console.log(`[Diff] SSE skipping non-data line:`, trimmed.slice(0, 100));
-          continue;
-        }
-        const jsonStr = trimmed.slice(6);
+        // SSE data lines: "data: {...}" or "data:{...}" (with or without space)
+        if (!trimmed.startsWith('data:')) continue;
+        const jsonStr = trimmed[5] === ' ' ? trimmed.slice(6) : trimmed.slice(5);
 
         try {
           const parsed = JSON.parse(jsonStr);
           const choice = parsed.choices?.[0];
-          if (!choice) {
-            console.log('[Diff] SSE no choices in:', JSON.stringify(parsed).slice(0, 200));
-            continue;
-          }
+          if (!choice) continue;
 
           // Check finish_reason
           if (choice.finish_reason === 'stop' || choice.finish_reason === 'end_turn') {
-            console.log('[Diff] SSE finish_reason:', choice.finish_reason);
             parser.flush();
             onDone();
             return;
           }
 
+          // Kimi For Coding: reasoning tokens arrive via delta.reasoning_content
+          const reasoningToken = choice.delta?.reasoning_content;
+          if (reasoningToken) {
+            onThinkingToken?.(reasoningToken);
+          }
+
+          // Content tokens arrive via delta.content
           const token = choice.delta?.content;
-          if (!token) continue;
-          parser.push(token);
+          if (token) {
+            parser.push(token);
+          }
         } catch {
-          console.log('[Diff] SSE parse error for:', jsonStr.slice(0, 100));
+          // Skip malformed SSE data
         }
       }
     }
