@@ -291,6 +291,8 @@ export async function streamMoonshotChat(
       }),
     });
 
+    console.log(`[Diff] Moonshot response: ${response.status} ${response.statusText}, content-type: ${response.headers.get('content-type')}`);
+
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       let detail = '';
@@ -319,7 +321,9 @@ export async function streamMoonshotChat(
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
+      console.log(`[Diff] SSE chunk (${chunk.length} chars):`, chunk.slice(0, 200));
+      buffer += chunk;
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
@@ -327,6 +331,7 @@ export async function streamMoonshotChat(
         const trimmed = line.trim();
         if (!trimmed || trimmed === 'data: [DONE]') {
           if (trimmed === 'data: [DONE]') {
+            console.log('[Diff] SSE stream complete ([DONE])');
             parser.flush();
             onDone();
             return;
@@ -335,16 +340,23 @@ export async function streamMoonshotChat(
         }
 
         // SSE lines start with "data: "
-        if (!trimmed.startsWith('data: ')) continue;
+        if (!trimmed.startsWith('data: ')) {
+          console.log(`[Diff] SSE skipping non-data line:`, trimmed.slice(0, 100));
+          continue;
+        }
         const jsonStr = trimmed.slice(6);
 
         try {
           const parsed = JSON.parse(jsonStr);
           const choice = parsed.choices?.[0];
-          if (!choice) continue;
+          if (!choice) {
+            console.log('[Diff] SSE no choices in:', JSON.stringify(parsed).slice(0, 200));
+            continue;
+          }
 
           // Check finish_reason
           if (choice.finish_reason === 'stop' || choice.finish_reason === 'end_turn') {
+            console.log('[Diff] SSE finish_reason:', choice.finish_reason);
             parser.flush();
             onDone();
             return;
@@ -354,7 +366,7 @@ export async function streamMoonshotChat(
           if (!token) continue;
           parser.push(token);
         } catch {
-          // Skip malformed SSE data
+          console.log('[Diff] SSE parse error for:', jsonStr.slice(0, 100));
         }
       }
     }
