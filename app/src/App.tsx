@@ -5,7 +5,7 @@ import { useChat } from '@/hooks/useChat';
 import { useGitHubAuth } from '@/hooks/useGitHubAuth';
 import { useRepos } from '@/hooks/useRepos';
 import { useActiveRepo } from '@/hooks/useActiveRepo';
-import { useOpenRouterKey } from '@/hooks/useOpenRouterKey';
+import { useMoonshotKey } from '@/hooks/useMoonshotKey';
 import { useOllamaKey } from '@/hooks/useOllamaKey';
 import { useSandbox } from '@/hooks/useSandbox';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
@@ -53,7 +53,7 @@ function App() {
     validatedUser,
   } = useGitHubAuth();
   const { repos, loading: reposLoading, sync: syncRepos } = useRepos();
-  const { key: orKey, setKey: setOrKey, clearKey: clearOrKey, hasKey: hasOrKey } = useOpenRouterKey();
+  const { key: orKey, setKey: setOrKey, clearKey: clearOrKey, hasKey: hasOrKey } = useMoonshotKey();
   const { key: ollamaKey, setKey: setOllamaKey, clearKey: clearOllamaKey, hasKey: hasOllamaKey } = useOllamaKey();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
@@ -261,7 +261,7 @@ function App() {
               }`}
             />
             <span className="text-xs text-[#52525b]">
-              {isDemo ? 'Demo' : hasOrKey ? 'OpenRouter' : hasOllamaKey ? 'Ollama Cloud' : isConnected ? 'GitHub' : 'Offline'}
+              {isDemo ? 'Demo' : hasOrKey ? 'Moonshot' : hasOllamaKey ? 'Ollama Cloud' : isConnected ? 'GitHub' : 'Offline'}
             </span>
           </div>
           <button
@@ -365,19 +365,19 @@ function App() {
                     }`}
                   />
                   <span className="text-xs text-[#a1a1aa]">
-                    {hasOrKey ? 'OpenRouter' : hasOllamaKey ? 'Ollama Cloud' : isDemo ? 'Demo' : 'Offline'}
+                    {hasOrKey ? 'Moonshot' : hasOllamaKey ? 'Ollama Cloud' : isDemo ? 'Demo' : 'Offline'}
                   </span>
                 </div>
               </div>
 
-              {/* OpenRouter */}
+              {/* Moonshot */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-[#a1a1aa]">OpenRouter</label>
+                <label className="text-xs font-medium text-[#a1a1aa]">Moonshot</label>
                 {hasOrKey ? (
                   <div className="space-y-2">
                     <div className="rounded-lg border border-[#1a1a1e] bg-[#111113] px-3 py-2">
                       <p className="text-sm text-[#a1a1aa] font-mono">
-                        {orKey?.startsWith('sk-or-') ? 'sk-or-••••••••' : 'Key saved'}
+                        {orKey?.startsWith('sk-') ? `${orKey.slice(0, 6)}••••••••` : 'Key saved'}
                       </p>
                     </div>
                     <Button
@@ -395,7 +395,7 @@ function App() {
                       type="password"
                       value={orKeyInput}
                       onChange={(e) => setOrKeyInput(e.target.value)}
-                      placeholder="sk-or-..."
+                      placeholder="sk-..."
                       className="w-full rounded-lg border border-[#1a1a1e] bg-[#111113] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && orKeyInput.trim()) {
@@ -416,7 +416,7 @@ function App() {
                       disabled={!orKeyInput.trim()}
                       className="text-[#a1a1aa] hover:text-[#fafafa] w-full justify-start"
                     >
-                      Save OpenRouter key
+                      Save Moonshot key
                     </Button>
                     <p className="text-xs text-[#52525b]">
                       Optional. Takes priority over Ollama Cloud when set.
@@ -474,7 +474,7 @@ function App() {
                       Save Ollama Cloud key
                     </Button>
                     <p className="text-xs text-[#52525b]">
-                      Optional. Used when OpenRouter key is not set.
+                      Optional. Used when Moonshot key is not set.
                     </p>
                   </div>
                 )}

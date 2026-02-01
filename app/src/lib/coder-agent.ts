@@ -1,13 +1,13 @@
 /**
  * Coder Agent — sub-agent that implements coding tasks autonomously.
  *
- * Uses GLM 4.5 Air via OpenRouter with its own tool loop.
+ * Uses Kimi K2 via Moonshot with its own tool loop.
  * The Coder can read files, write files, run commands, and get diffs
  * all within the sandbox. It runs up to 5 rounds before exiting.
  */
 
 import type { ChatMessage, ChatCard } from '@/types';
-import { streamOpenRouterChat } from './orchestrator';
+import { streamMoonshotChat } from './orchestrator';
 import { getModelForRole } from './providers';
 import { detectSandboxToolCall, executeSandboxToolCall, SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
 
@@ -32,9 +32,9 @@ export async function runCoderAgent(
   files: string[],
   onStatus: (phase: string, detail?: string) => void,
 ): Promise<{ summary: string; cards: ChatCard[]; rounds: number }> {
-  const coderModel = getModelForRole('openrouter', 'coder');
+  const coderModel = getModelForRole('moonshot', 'coder');
   if (!coderModel) {
-    throw new Error('Coder model not configured. Ensure OpenRouter has a coder model.');
+    throw new Error('Coder model not configured. Ensure Moonshot has a coder model.');
   }
 
   const allCards: ChatCard[] = [];
@@ -58,7 +58,7 @@ export async function runCoderAgent(
 
     // Stream Coder response
     const streamError = await new Promise<Error | null>((resolve) => {
-      streamOpenRouterChat(
+      streamMoonshotChat(
         messages,
         (token) => { accumulated += token; },
         () => resolve(null),

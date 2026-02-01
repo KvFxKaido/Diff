@@ -19,31 +19,31 @@ export const PROVIDERS: AIProviderConfig[] = [
     ],
   },
   {
-    type: 'openrouter',
-    name: 'OpenRouter',
-    description: 'OpenAI-compatible API with access to multiple models',
-    envKey: 'VITE_OPENROUTER_API_KEY',
+    type: 'moonshot',
+    name: 'Moonshot',
+    description: 'Kimi models via Moonshot AI (OpenAI-compatible)',
+    envKey: 'VITE_MOONSHOT_API_KEY',
     models: [
       {
-        id: 'moonshotai/kimi-k2:free',
-        name: 'Kimi K2 (Free)',
-        provider: 'openrouter',
+        id: 'kimi-k2-0905-preview',
+        name: 'Kimi K2 (Orchestrator)',
+        provider: 'moonshot',
         role: 'orchestrator',
-        context: 131_072,
+        context: 256_000,
       },
       {
-        id: 'z-ai/glm-4.5-air:free',
-        name: 'GLM 4.5 Air (Coder)',
-        provider: 'openrouter',
+        id: 'kimi-k2-0905-preview',
+        name: 'Kimi K2 (Coder)',
+        provider: 'moonshot',
         role: 'coder',
-        context: 128_000,
+        context: 256_000,
       },
       {
-        id: 'tngtech/deepseek-r1t-chimera:free',
-        name: 'DeepSeek R1T Chimera (Auditor)',
-        provider: 'openrouter',
+        id: 'kimi-k2-thinking',
+        name: 'Kimi K2 Thinking (Auditor)',
+        provider: 'moonshot',
         role: 'auditor',
-        context: 128_000,
+        context: 256_000,
       },
     ],
   },
@@ -71,5 +71,5 @@ export async function analyzePR(
   _providerType: AIProviderType,
   modelId?: string,
 ): Promise<AnalysisResult> {
-  return analyzePRWithOllamaCloud(prData, modelId || 'tngtech/deepseek-r1t-chimera:free');
+  return analyzePRWithOllamaCloud(prData, modelId || 'kimi-k2-thinking');
 }

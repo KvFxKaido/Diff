@@ -1,7 +1,7 @@
 import type { ChatMessage } from '@/types';
 import { TOOL_PROTOCOL } from './github-tools';
 import { SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
-import { getOpenRouterKey } from '@/hooks/useOpenRouterKey';
+import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 import { getOllamaKey } from '@/hooks/useOllamaKey';
 
 // ---------------------------------------------------------------------------
@@ -16,11 +16,11 @@ const OLLAMA_CLOUD_API_URL =
 const OLLAMA_ORCHESTRATOR_MODEL = 'kimi-k2.5:cloud';
 
 // ---------------------------------------------------------------------------
-// OpenRouter config
+// Moonshot config
 // ---------------------------------------------------------------------------
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL = 'moonshotai/kimi-k2:free';
+const MOONSHOT_API_URL = 'https://api.moonshot.ai/v1/chat/completions';
+const MOONSHOT_MODEL = 'kimi-k2-0905-preview';
 
 // ---------------------------------------------------------------------------
 // Shared: system prompt, demo text, message builder
@@ -250,10 +250,10 @@ async function streamOllamaChat(
 }
 
 // ---------------------------------------------------------------------------
-// OpenRouter streaming (SSE)
+// Moonshot streaming (SSE — OpenAI-compatible)
 // ---------------------------------------------------------------------------
 
-export async function streamOpenRouterChat(
+export async function streamMoonshotChat(
   messages: ChatMessage[],
   onToken: (token: string) => void,
   onDone: () => void,
@@ -264,24 +264,22 @@ export async function streamOpenRouterChat(
   modelOverride?: string,
   systemPromptOverride?: string,
 ): Promise<void> {
-  const apiKey = getOpenRouterKey();
+  const apiKey = getMoonshotKey();
   if (!apiKey) {
-    onError(new Error('OpenRouter API key not configured'));
+    onError(new Error('Moonshot API key not configured'));
     return;
   }
 
-  const model = modelOverride || OPENROUTER_MODEL;
+  const model = modelOverride || MOONSHOT_MODEL;
 
   try {
-    console.log(`[Diff] POST ${OPENROUTER_API_URL} (model: ${model})`);
+    console.log(`[Diff] POST ${MOONSHOT_API_URL} (model: ${model})`);
 
-    const response = await fetch(OPENROUTER_API_URL, {
+    const response = await fetch(MOONSHOT_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Diff',
       },
       body: JSON.stringify({
         model,
@@ -299,8 +297,8 @@ export async function streamOpenRouterChat(
       } catch {
         detail = body ? body.slice(0, 200) : 'empty body';
       }
-      console.error(`[Diff] OpenRouter error: ${response.status}`, detail);
-      throw new Error(`OpenRouter ${response.status}: ${detail}`);
+      console.error(`[Diff] Moonshot error: ${response.status}`, detail);
+      throw new Error(`Moonshot ${response.status}: ${detail}`);
     }
 
     const reader = response.body?.getReader();
@@ -363,10 +361,10 @@ export async function streamOpenRouterChat(
     onDone();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Diff] OpenRouter chat error:`, msg);
+    console.error(`[Diff] Moonshot chat error:`, msg);
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
       onError(new Error(
-        `Cannot reach OpenRouter — network error. Check your connection.`
+        `Cannot reach Moonshot — network error. Check your connection.`
       ));
     } else {
       onError(err instanceof Error ? err : new Error(msg));
@@ -387,8 +385,8 @@ export async function streamChat(
   workspaceContext?: string,
   hasSandbox?: boolean,
 ): Promise<void> {
-  // Check both keys at runtime (not module load) so Settings changes take effect immediately
-  if (import.meta.env.DEV && !getOllamaKey() && !getOpenRouterKey()) {
+  // Check all keys at runtime (not module load) so Settings changes take effect immediately
+  if (import.meta.env.DEV && !getOllamaKey() && !getMoonshotKey()) {
     const words = DEMO_WELCOME.split(' ');
     for (let i = 0; i < words.length; i++) {
       await new Promise((r) => setTimeout(r, 12));
@@ -398,8 +396,8 @@ export async function streamChat(
     return;
   }
 
-  if (getOpenRouterKey()) {
-    return streamOpenRouterChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox);
+  if (getMoonshotKey()) {
+    return streamMoonshotChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox);
   }
 
   return streamOllamaChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox);

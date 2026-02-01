@@ -1,7 +1,7 @@
 /**
  * Auditor Agent — reviews diffs for safety before allowing commits.
  *
- * Uses DeepSeek R1T Chimera via OpenRouter. Produces a binary verdict:
+ * Uses Kimi K2 Thinking via Moonshot. Produces a binary verdict:
  * SAFE or UNSAFE, plus a structured risk assessment.
  *
  * Design: fail-safe. If the Auditor returns invalid JSON or errors,
@@ -9,7 +9,7 @@
  */
 
 import type { ChatMessage, AuditVerdictCardData } from '@/types';
-import { streamOpenRouterChat } from './orchestrator';
+import { streamMoonshotChat } from './orchestrator';
 import { getModelForRole } from './providers';
 
 const AUDITOR_SYSTEM_PROMPT = `You are the Auditor agent for Diff, a mobile AI coding assistant. Your sole job is to review code diffs for safety.
@@ -52,7 +52,7 @@ export async function runAuditor(
   diff: string,
   onStatus: (phase: string) => void,
 ): Promise<{ verdict: 'safe' | 'unsafe'; card: AuditVerdictCardData }> {
-  const auditorModel = getModelForRole('openrouter', 'auditor');
+  const auditorModel = getModelForRole('moonshot', 'auditor');
   if (!auditorModel) {
     // No auditor model → fail-safe to unsafe
     return {
@@ -82,7 +82,7 @@ export async function runAuditor(
   let accumulated = '';
 
   const streamError = await new Promise<Error | null>((resolve) => {
-    streamOpenRouterChat(
+    streamMoonshotChat(
       messages,
       (token) => { accumulated += token; },
       () => resolve(null),

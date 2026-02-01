@@ -10,7 +10,7 @@
 import { useState, useCallback } from 'react';
 import { getSandboxDiff, execInSandbox } from '@/lib/sandbox-client';
 import { runAuditor } from '@/lib/auditor-agent';
-import { getOpenRouterKey } from '@/hooks/useOpenRouterKey';
+import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 import type { DiffPreviewCardData, AuditVerdictCardData } from '@/types';
 
 export type CommitPushPhase =
@@ -107,12 +107,12 @@ export function useCommitPush(sandboxId: string) {
       return;
     }
 
-    // Check OpenRouter key for Auditor
-    if (!getOpenRouterKey()) {
+    // Check Moonshot key for Auditor
+    if (!getMoonshotKey()) {
       setState((s) => ({
         ...s,
         phase: 'error',
-        error: 'Auditor requires an OpenRouter API key. Add one in Settings.',
+        error: 'Auditor requires a Moonshot API key. Add one in Settings.',
       }));
       return;
     }
