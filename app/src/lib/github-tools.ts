@@ -387,6 +387,11 @@ function normalizeRepoName(repo: string): string {
  * Returns text for the LLM + optional structured card for the UI.
  */
 export async function executeToolCall(call: ToolCall, allowedRepo: string): Promise<ToolExecutionResult> {
+  // delegate_coder is handled at a higher level — skip repo validation
+  if (call.tool === 'delegate_coder') {
+    return { text: '[delegate_coder] Handled by tool-dispatch layer.' };
+  }
+
   const allowedNormalized = normalizeRepoName(allowedRepo || '');
   const requestedNormalized = normalizeRepoName(call.args.repo || '');
   if (!allowedNormalized || !requestedNormalized || requestedNormalized !== allowedNormalized) {
@@ -405,9 +410,6 @@ export async function executeToolCall(call: ToolCall, allowedRepo: string): Prom
         return await executeReadFile(call.args.repo, call.args.path, call.args.branch);
       case 'list_branches':
         return await executeListBranches(call.args.repo);
-      case 'delegate_coder':
-        // Handled at a higher level (useChat / tool-dispatch), not here
-        return { text: '[Tool Error] delegate_coder must be handled by the chat hook.' };
       default:
         return { text: `[Tool Error] Unknown tool: ${(call as any).tool}` };
     }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, ChatCard } from '@/types';
+import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult } from '@/types';
 import { streamChat } from '@/lib/orchestrator';
 import { detectAnyToolCall, executeAnyToolCall } from '@/lib/tool-dispatch';
 import type { AnyToolCall } from '@/lib/tool-dispatch';
