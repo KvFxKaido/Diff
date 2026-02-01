@@ -1,18 +1,16 @@
 # Diff
 
-A mobile-first, client-side web app that analyzes GitHub Pull Requests using AI. Enter a repo and PR number, get a structured code review with risk assessment, diff notes, and complexity hotspots — all from your phone.
+Mobile-first AI coding agent with direct GitHub repo access. Chat with your codebase — review PRs, explore changes, and ship code from your phone.
 
-## Overview
+## What It Does
 
-Diff is built for quick judgment passes: open a PR on your phone, get a clear answer on whether it's safe to merge, and move on. It uses Ollama Cloud for AI analysis and the GitHub REST API for data fetching. No backend required (except an optional OAuth proxy for private repos).
+Diff is a personal chat interface backed by role-based AI agents. Select a repo, ask questions, and the agent reads your code, analyzes PRs, and shows results as inline cards — all in a streaming conversation.
 
-**Key capabilities:**
-
-- Risk assessment with severity levels (low / medium / high)
-- Annotated diff notes classified by type (logic, mechanical, style)
-- Complexity hotspot detection
-- Demo mode with mock data when API keys aren't configured
-- Installable PWA with offline support
+- **Chat-first** — conversation is the primary interface, not forms or dashboards
+- **Repo-locked context** — select a repo and the agent only sees that repo
+- **Tool protocol** — the agent calls GitHub's API mid-conversation (PRs, commits, diffs)
+- **Streaming** — responses arrive token-by-token with visible thinking
+- **Demo mode** — works with mock data when no credentials are configured
 
 ## Tech Stack
 
@@ -20,19 +18,13 @@ Diff is built for quick judgment passes: open a PR on your phone, get a clear an
 |-------|-------|
 | Framework | React 19, TypeScript 5.9 |
 | Build | Vite 7 |
-| Styling | Tailwind CSS 3, shadcn/ui (Radix UI primitives) |
-| Forms | React Hook Form, Zod |
-| APIs | GitHub REST API, Ollama Cloud |
+| Styling | Tailwind CSS 3, shadcn/ui (Radix primitives) |
+| AI | Ollama Cloud (Kimi K2.5 orchestrator) |
+| APIs | GitHub REST API |
+| Deploy | Cloudflare Workers + Assets |
 | PWA | Service Worker, Web App Manifest |
 
 ## Getting Started
-
-### Prerequisites
-
-- Node.js v18+
-- npm
-
-### Install and Run
 
 ```bash
 cd app
@@ -40,74 +32,62 @@ npm install
 npm run dev
 ```
 
-The app runs in demo mode by default. To enable real analysis, create a `.env` file in `app/`:
+Create `app/.env` for local development:
 
 ```env
-VITE_OLLAMA_CLOUD_API_KEY=your_api_key         # Required for AI analysis
-VITE_OLLAMA_CLOUD_API_URL=your_api_url         # Optional — defaults to Ollama Cloud
-VITE_GITHUB_TOKEN=your_github_token            # Optional — higher GitHub rate limits
-VITE_GITHUB_CLIENT_ID=your_client_id           # Optional — enables OAuth login
-VITE_GITHUB_OAUTH_PROXY=https://your-proxy.example.com/oauth/github
+VITE_OLLAMA_CLOUD_API_KEY=...     # Required for AI — prod key lives in Cloudflare secrets
+VITE_GITHUB_TOKEN=...             # Optional — higher GitHub rate limits
 ```
 
-### Scripts
+Without keys the app runs in demo mode with mock repos and a welcome message.
+
+## Production
+
+Deployed on Cloudflare Workers. The worker at `app/worker.ts` proxies `/api/chat` to Ollama Cloud with the API key stored as a runtime secret. Static assets are served by the Cloudflare Assets layer.
 
 ```bash
-npm run dev       # Start dev server
-npm run build     # Type-check and build for production
-npm run preview   # Preview production build
-npm run lint      # Run ESLint
+cd app && npm run build
+npx wrangler deploy     # from repo root
 ```
 
 ## Project Structure
 
 ```
 Diff/
-├── CLAUDE.md           # AI assistant context
-├── README.md           # This file
-├── Roadmap.md          # Product roadmap and design principles
-└── app/                # Application source
-    ├── public/         # PWA assets (manifest, service worker)
-    ├── src/
-    │   ├── components/ui/   # shadcn/ui component library
-    │   ├── hooks/           # React hooks (GitHub API, analysis, auth)
-    │   ├── lib/             # API clients and utilities
-    │   ├── sections/        # Screen components (Home, Running, Results)
-    │   ├── types/           # TypeScript type definitions
-    │   ├── App.tsx          # Root component and screen routing
-    │   └── main.tsx         # Entry point
-    ├── index.html
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    └── package.json
+├── CLAUDE.md              # AI assistant context (architecture, conventions)
+├── wrangler.jsonc         # Cloudflare Workers config
+├── app/
+│   ├── worker.ts          # Cloudflare Worker — streaming proxy
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, RepoSelector
+│   │   │   └── ui/        # shadcn/ui component library
+│   │   ├── hooks/         # useChat, useGitHubAuth, useRepos, useActiveRepo
+│   │   ├── lib/           # orchestrator, github-tools, workspace-context
+│   │   ├── sections/      # OnboardingScreen, RepoPicker
+│   │   ├── types/         # TypeScript type definitions
+│   │   └── App.tsx        # Screen state machine (onboarding → repo-picker → chat)
+│   ├── vite.config.ts
+│   └── package.json
 ```
 
 ## How It Works
 
-1. **Input** — Provide a GitHub repository and PR number
-2. **Fetch** — The app retrieves PR metadata, changed files, and the unified diff via the GitHub API
-3. **Analyze** — The diff is sent to Ollama Cloud with a structured review prompt
-4. **Display** — Results are rendered in collapsible sections: summary, risks, diff notes, and hotspots
+1. **Onboard** — validate a GitHub PAT (calls `GET /user` to verify)
+2. **Pick a repo** — select from your repos, search by name
+3. **Chat** — ask about PRs, recent changes, codebase structure
+4. **Tools** — the agent emits JSON tool blocks, the client executes them against GitHub's API, injects results, and re-prompts (up to 3 rounds)
+5. **Cards** — structured results render as inline cards in the chat
 
 ## Architecture
 
-The app follows a role-based agent model described in [Roadmap.md](Roadmap.md):
+Role-based agent system. Models are replaceable; roles are not.
 
-- **Orchestrator** — Intent routing and workflow sequencing
-- **Coder** — Implementation and code edits
-- **Auditor** — Deterministic analysis and pre-commit review
-- **Interpreter** — Ambiguity resolution and input normalization
+- **Orchestrator (Kimi K2.5)** — conversational lead, tool orchestration
+- **Coder (GLM 4.7)** — code implementation and edits
+- **Auditor (Gemini 3 Pro)** — risk review, pre-commit gate
 
-All AI runs through Ollama Cloud (flat subscription, no token metering).
-
-## Design Principles
-
-- **Mobile first** — Built for one-handed phone use; desktop is secondary
-- **One app, not four** — Replaces GitSync, GitHub mobile, Claude, and Codex
-- **Live pipeline** — Every action visible in real time
-- **One action per screen** — No dense dashboards
-- **Quiet confidence** — Structured output with clear uncertainty labeling
-- **Zero-friction start** — Demo mode works with no configuration
+All AI runs through Ollama Cloud via the Cloudflare Worker proxy.
 
 ## License
 
