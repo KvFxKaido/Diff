@@ -31,11 +31,17 @@ export async function runCoderAgent(
   sandboxId: string,
   files: string[],
   onStatus: (phase: string, detail?: string) => void,
+  agentsMd?: string,
 ): Promise<{ summary: string; cards: ChatCard[]; rounds: number }> {
   const coderModel = getModelForRole('moonshot', 'coder');
   if (!coderModel) {
     throw new Error('Coder model not configured. Ensure Moonshot has a coder model.');
   }
+
+  // Build system prompt, optionally including AGENTS.md
+  const systemPrompt = agentsMd
+    ? CODER_SYSTEM_PROMPT + `\n\nAGENTS.MD — Project instructions from the repository:\n${agentsMd}`
+    : CODER_SYSTEM_PROMPT;
 
   const allCards: ChatCard[] = [];
   let rounds = 0;
@@ -67,7 +73,7 @@ export async function runCoderAgent(
         undefined, // no workspace context (Coder uses sandbox)
         true,      // hasSandbox
         coderModel.id,
-        CODER_SYSTEM_PROMPT,
+        systemPrompt,
       );
     });
 

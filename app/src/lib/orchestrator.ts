@@ -19,7 +19,10 @@ const OLLAMA_ORCHESTRATOR_MODEL = 'kimi-k2.5:cloud';
 // Moonshot / Kimi For Coding config
 // ---------------------------------------------------------------------------
 
-const MOONSHOT_API_URL = 'https://api.kimi.com/coding/v1/chat/completions';
+// Dev: Vite proxy avoids CORS. Prod: Cloudflare Worker proxy at /api/kimi/chat.
+const MOONSHOT_API_URL = import.meta.env.DEV
+  ? '/kimi/coding/v1/chat/completions'
+  : '/api/kimi/chat';
 const MOONSHOT_MODEL = 'k2p5';
 
 // ---------------------------------------------------------------------------

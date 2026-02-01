@@ -207,6 +207,14 @@ export function useChat(activeRepoFullName: string | null) {
     sandboxIdRef.current = id;
   }, []);
 
+  // --- AGENTS.md content (set from App.tsx when sandbox is ready) ---
+
+  const agentsMdRef = useRef<string | null>(null);
+
+  const setAgentsMd = useCallback((md: string | null) => {
+    agentsMdRef.current = md;
+  }, []);
+
   // --- Chat management ---
 
   const createNewChat = useCallback((): string => {
@@ -521,6 +529,7 @@ export function useChat(activeRepoFullName: string | null) {
                   (phase, detail) => {
                     setAgentStatus({ active: true, phase, detail });
                   },
+                  agentsMdRef.current || undefined,
                 );
 
                 // Attach all Coder cards to the assistant message
@@ -637,5 +646,8 @@ export function useChat(activeRepoFullName: string | null) {
 
     // Sandbox
     setSandboxId,
+
+    // AGENTS.md
+    setAgentsMd,
   };
 }

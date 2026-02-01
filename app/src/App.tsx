@@ -9,6 +9,7 @@ import { useMoonshotKey } from '@/hooks/useMoonshotKey';
 import { useOllamaKey } from '@/hooks/useOllamaKey';
 import { useSandbox } from '@/hooks/useSandbox';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
+import { readFromSandbox } from '@/lib/sandbox-client';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { RepoAndChatSelector } from '@/components/chat/RepoAndChatSelector';
@@ -42,6 +43,7 @@ function App() {
     deleteAllChats,
     setWorkspaceContext,
     setSandboxId,
+    setAgentsMd,
   } = useChat(activeRepo?.full_name ?? null);
   const sandbox = useSandbox();
   const {
@@ -109,14 +111,39 @@ function App() {
     setIsDemo(false);
   }, [logout, clearActiveRepo, deleteAllChats]);
 
-  // Build workspace context when repos or active repo change
+  // --- AGENTS.md: read from sandbox when ready ---
+
+  const [agentsMdContent, setAgentsMdContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sandbox.status !== 'ready' || !sandbox.sandboxId) {
+      setAgentsMdContent(null);
+      setAgentsMd(null);
+      return;
+    }
+    readFromSandbox(sandbox.sandboxId, '/workspace/AGENTS.md')
+      .then((result) => {
+        setAgentsMdContent(result.content);
+        setAgentsMd(result.content); // Coder path
+      })
+      .catch(() => {
+        setAgentsMdContent(null);
+        setAgentsMd(null);
+      });
+  }, [sandbox.status, sandbox.sandboxId, setAgentsMd]);
+
+  // Build workspace context when repos, active repo, or AGENTS.md change
   useEffect(() => {
     if (repos.length > 0) {
-      setWorkspaceContext(buildWorkspaceContext(repos, activeRepo));
+      let ctx = buildWorkspaceContext(repos, activeRepo);
+      if (agentsMdContent) {
+        ctx += '\n\nAGENTS.MD — Project instructions from the repository:\n' + agentsMdContent;
+      }
+      setWorkspaceContext(ctx);
     } else {
       setWorkspaceContext(null);
     }
-  }, [repos, activeRepo, setWorkspaceContext]);
+  }, [repos, activeRepo, agentsMdContent, setWorkspaceContext]);
 
   // Sync sandbox ID to useChat
   useEffect(() => {

@@ -20,6 +20,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ollama/, ''),
       },
+      '/kimi': {
+        target: 'https://api.kimi.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/kimi/, ''),
+      },
     },
   },
 });
