@@ -1,9 +1,12 @@
-import type { RepoWithActivity } from '@/types';
+import type { RepoWithActivity, ActiveRepo } from '@/types';
 
 /**
  * Builds a compact workspace summary for injection into the system prompt.
  * Gives the LLM awareness of the user's GitHub repos without consuming
  * much of the context window (~1-2KB for a typical user).
+ *
+ * When activeRepo is set, it gets detailed treatment while others
+ * are listed as compact one-liners.
  */
 
 function relativeTime(iso: string): string {
@@ -19,16 +22,14 @@ function relativeTime(iso: string): string {
   return `${weeks}w ago`;
 }
 
-function formatRepo(repo: RepoWithActivity): string {
+function formatRepoFull(repo: RepoWithActivity): string {
   const parts: string[] = [];
 
-  // Name + language
   let line = `• ${repo.full_name}`;
   if (repo.language) line += ` (${repo.language})`;
   if (repo.private) line += ' [private]';
   parts.push(line);
 
-  // Activity summary
   const stats: string[] = [];
   if (repo.activity.open_prs > 0) {
     stats.push(`${repo.activity.open_prs} open PR${repo.activity.open_prs > 1 ? 's' : ''}`);
@@ -40,7 +41,6 @@ function formatRepo(repo: RepoWithActivity): string {
 
   parts.push(`  ${stats.join(', ')}`);
 
-  // Description if present
   if (repo.description) {
     parts.push(`  ${repo.description}`);
   }
@@ -48,33 +48,63 @@ function formatRepo(repo: RepoWithActivity): string {
   return parts.join('\n');
 }
 
-export function buildWorkspaceContext(repos: RepoWithActivity[]): string {
+function formatRepoCompact(repo: RepoWithActivity): string {
+  const lang = repo.language ? ` (${repo.language})` : '';
+  const prs = repo.activity.open_prs > 0 ? ` ${repo.activity.open_prs}PR` : '';
+  return `• ${repo.full_name}${lang}${prs} — ${relativeTime(repo.pushed_at)}`;
+}
+
+export function buildWorkspaceContext(
+  repos: RepoWithActivity[],
+  activeRepo?: ActiveRepo | null,
+): string {
   if (repos.length === 0) {
     return 'WORKSPACE — No GitHub repos connected. Ask the user to connect their GitHub account in settings.';
   }
 
-  const active = repos.filter((r) => r.activity.has_new_activity).slice(0, 10);
-  const recent = repos
-    .filter((r) => !r.activity.has_new_activity)
-    .slice(0, 5);
+  const sections: string[] = [];
 
-  const sections: string[] = ['WORKSPACE — GitHub repos for this user:\n'];
+  // When an active repo is set, give it focused detail
+  if (activeRepo) {
+    const focused = repos.find((r) => r.id === activeRepo.id);
+    const others = repos.filter((r) => r.id !== activeRepo.id).slice(0, 10);
 
-  if (active.length > 0) {
-    sections.push('ACTIVE:');
-    sections.push(active.map(formatRepo).join('\n'));
-  }
+    sections.push(`ACTIVE REPO — ${activeRepo.full_name} (default for all tool calls):\n`);
 
-  if (recent.length > 0) {
-    if (active.length > 0) sections.push('');
-    sections.push('RECENT:');
-    sections.push(recent.map(formatRepo).join('\n'));
-  }
+    if (focused) {
+      sections.push(formatRepoFull(focused));
+    } else {
+      sections.push(`• ${activeRepo.full_name} (${activeRepo.default_branch})`);
+    }
 
-  // If all repos are inactive (no "active" ones)
-  if (active.length === 0 && recent.length === 0) {
-    sections.push('REPOS:');
-    sections.push(repos.slice(0, 10).map(formatRepo).join('\n'));
+    if (others.length > 0) {
+      sections.push('\nOTHER REPOS:');
+      sections.push(others.map(formatRepoCompact).join('\n'));
+    }
+  } else {
+    // No active repo — list all with full detail for active ones
+    const active = repos.filter((r) => r.activity.has_new_activity).slice(0, 10);
+    const recent = repos
+      .filter((r) => !r.activity.has_new_activity)
+      .slice(0, 5);
+
+    sections.push('WORKSPACE — GitHub repos for this user:\n');
+
+    if (active.length > 0) {
+      sections.push('ACTIVE:');
+      sections.push(active.map(formatRepoFull).join('\n'));
+    }
+
+    if (recent.length > 0) {
+      if (active.length > 0) sections.push('');
+      sections.push('RECENT:');
+      sections.push(recent.map(formatRepoFull).join('\n'));
+    }
+
+    if (active.length === 0 && recent.length === 0) {
+      sections.push('REPOS:');
+      sections.push(repos.slice(0, 10).map(formatRepoFull).join('\n'));
+    }
   }
 
   sections.push('\nUse the tools below to get PR details, commits, or file contents.');

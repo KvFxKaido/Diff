@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { GitHubUser } from '../types';
 
 const STORAGE_KEY = 'github_access_token';
 const STATE_KEY = 'github_oauth_state';
@@ -15,20 +16,71 @@ type UseGitHubAuth = {
   error: string | null;
   configured: boolean;
   oauthConfigured: boolean;
-  setTokenManually: (token: string) => void;
+  setTokenManually: (token: string) => Promise<boolean>;
+  validatedUser: GitHubUser | null;
 };
+
+async function validateToken(pat: string): Promise<GitHubUser | null> {
+  try {
+    const res = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${pat}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { login: data.login, avatar_url: data.avatar_url };
+  } catch {
+    return null;
+  }
+}
 
 export function useGitHubAuth(): UseGitHubAuth {
   const [token, setToken] = useState(() => localStorage.getItem(STORAGE_KEY) || ENV_TOKEN);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validatedUser, setValidatedUser] = useState<GitHubUser | null>(null);
+  const mountValidated = useRef(false);
 
-  const setTokenManually = useCallback((pat: string) => {
+  // On mount: silently re-validate stored token
+  useEffect(() => {
+    if (mountValidated.current) return;
+    mountValidated.current = true;
+
+    const stored = localStorage.getItem(STORAGE_KEY) || ENV_TOKEN;
+    if (!stored) return;
+
+    validateToken(stored).then((user) => {
+      if (user) {
+        setValidatedUser(user);
+      } else {
+        // Token expired or revoked — clear it
+        localStorage.removeItem(STORAGE_KEY);
+        setToken('');
+        setValidatedUser(null);
+      }
+    });
+  }, []);
+
+  const setTokenManually = useCallback(async (pat: string): Promise<boolean> => {
     const trimmed = pat.trim();
-    if (trimmed) {
+    if (!trimmed) return false;
+
+    setLoading(true);
+    setError(null);
+
+    const user = await validateToken(trimmed);
+    if (user) {
       localStorage.setItem(STORAGE_KEY, trimmed);
       setToken(trimmed);
-      setError(null);
+      setValidatedUser(user);
+      setLoading(false);
+      return true;
+    } else {
+      setError('Invalid token — could not authenticate with GitHub.');
+      setLoading(false);
+      return false;
     }
   }, []);
 
@@ -55,6 +107,7 @@ export function useGitHubAuth(): UseGitHubAuth {
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setToken('');
+    setValidatedUser(null);
   }, []);
 
   useEffect(() => {
@@ -98,13 +151,17 @@ export function useGitHubAuth(): UseGitHubAuth {
         }
         return response.json();
       })
-      .then((data: { access_token?: string }) => {
+      .then(async (data: { access_token?: string }) => {
         if (!data.access_token) {
           throw new Error('No access token returned');
         }
         localStorage.setItem(STORAGE_KEY, data.access_token);
         setToken(data.access_token);
         window.history.replaceState({}, document.title, window.location.pathname);
+
+        // Validate the OAuth token too
+        const user = await validateToken(data.access_token);
+        if (user) setValidatedUser(user);
       })
       .catch((err: Error) => {
         setError(`GitHub OAuth error: ${err.message}`);
@@ -123,5 +180,6 @@ export function useGitHubAuth(): UseGitHubAuth {
     configured: Boolean(CLIENT_ID) || Boolean(ENV_TOKEN),
     oauthConfigured: Boolean(CLIENT_ID),
     setTokenManually,
+    validatedUser,
   };
 }

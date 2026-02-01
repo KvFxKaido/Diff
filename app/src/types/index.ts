@@ -132,3 +132,21 @@ export interface Conversation {
   createdAt: number;
   lastMessageAt: number;
 }
+
+// Onboarding + Active Repo types
+
+export interface ActiveRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: string;
+  default_branch: string;
+  private: boolean;
+}
+
+export interface GitHubUser {
+  login: string;
+  avatar_url: string;
+}
+
+export type AppScreen = 'onboarding' | 'repo-picker' | 'chat';

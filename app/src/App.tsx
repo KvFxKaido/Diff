@@ -1,12 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Settings, Trash2 } from 'lucide-react';
 import { useChat } from '@/hooks/useChat';
 import { useGitHubAuth } from '@/hooks/useGitHubAuth';
 import { useRepos } from '@/hooks/useRepos';
+import { useActiveRepo } from '@/hooks/useActiveRepo';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatSwitcher } from '@/components/chat/ChatSwitcher';
+import { RepoSelector } from '@/components/chat/RepoSelector';
+import { OnboardingScreen } from '@/sections/OnboardingScreen';
+import { RepoPicker } from '@/sections/RepoPicker';
+import type { AppScreen, RepoWithActivity } from '@/types';
 import {
   Sheet,
   SheetContent,
@@ -15,7 +20,6 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import './App.css';
 
 function App() {
@@ -33,40 +37,84 @@ function App() {
     deleteAllChats,
     setWorkspaceContext,
   } = useChat();
-  const { token, setTokenManually, logout, configured } = useGitHubAuth();
-  const { repos, sync: syncRepos } = useRepos();
+  const {
+    token,
+    setTokenManually,
+    logout,
+    loading: authLoading,
+    error: authError,
+    validatedUser,
+  } = useGitHubAuth();
+  const { repos, loading: reposLoading, sync: syncRepos } = useRepos();
+  const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [patInput, setPatInput] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
 
-  const handleSavePat = () => {
-    if (patInput.trim()) {
-      setTokenManually(patInput.trim());
-      setPatInput('');
-    }
-  };
+  // Screen state machine
+  const screen: AppScreen = useMemo(() => {
+    if (isDemo) return 'chat';
+    if (!token) return 'onboarding';
+    if (!activeRepo) return 'repo-picker';
+    return 'chat';
+  }, [token, activeRepo, isDemo]);
 
-  // Sync repos on mount
-  useEffect(() => {
-    syncRepos();
+  // On PAT connect success: auto-sync repos
+  const handleConnect = useCallback(
+    async (pat: string): Promise<boolean> => {
+      const success = await setTokenManually(pat);
+      if (success) syncRepos();
+      return success;
+    },
+    [setTokenManually, syncRepos],
+  );
+
+  // Demo mode escape hatch
+  const handleDemo = useCallback(() => {
+    setIsDemo(true);
+    syncRepos(); // Will use mock repos since no token
   }, [syncRepos]);
 
-  // Build workspace context when repos change
+  // Repo selection from picker
+  const handleSelectRepo = useCallback(
+    (repo: RepoWithActivity) => {
+      setActiveRepo({
+        id: repo.id,
+        name: repo.name,
+        full_name: repo.full_name,
+        owner: repo.owner,
+        default_branch: repo.default_branch,
+        private: repo.private,
+      });
+    },
+    [setActiveRepo],
+  );
+
+  // Disconnect: clear everything
+  const handleDisconnect = useCallback(() => {
+    logout();
+    clearActiveRepo();
+    setIsDemo(false);
+  }, [logout, clearActiveRepo]);
+
+  // Build workspace context when repos or active repo change
   useEffect(() => {
     if (repos.length > 0) {
-      setWorkspaceContext(buildWorkspaceContext(repos));
+      setWorkspaceContext(buildWorkspaceContext(repos, activeRepo));
     } else {
       setWorkspaceContext(null);
     }
-  }, [repos, setWorkspaceContext]);
+  }, [repos, activeRepo, setWorkspaceContext]);
+
+  // Sync repos on mount (for returning users who already have a token)
+  useEffect(() => {
+    if (token) syncRepos();
+  }, [token, syncRepos]);
 
   // Wrap createNewChat to also re-sync repos
   const handleCreateNewChat = useCallback(() => {
     createNewChat();
     syncRepos();
   }, [createNewChat, syncRepos]);
-
-  const isConnected = Boolean(token);
-  const hasChats = sortedChatIds.length > 0;
 
   // Unregister service workers on tunnel domains to prevent stale caching
   useEffect(() => {
@@ -76,6 +124,37 @@ function App() {
       );
     }
   }, []);
+
+  // ----- Screen routing -----
+
+  if (screen === 'onboarding') {
+    return (
+      <OnboardingScreen
+        onConnect={handleConnect}
+        onDemo={handleDemo}
+        loading={authLoading}
+        error={authError}
+        validatedUser={validatedUser}
+      />
+    );
+  }
+
+  if (screen === 'repo-picker') {
+    return (
+      <RepoPicker
+        repos={repos}
+        loading={reposLoading}
+        onSelect={handleSelectRepo}
+        onDisconnect={handleDisconnect}
+        user={validatedUser}
+      />
+    );
+  }
+
+  // ----- Chat screen -----
+
+  const isConnected = Boolean(token) || isDemo;
+  const hasChats = sortedChatIds.length > 0;
 
   return (
     <div className="flex h-dvh flex-col bg-[#09090b] safe-area-top">
@@ -96,6 +175,17 @@ function App() {
               Diff
             </h1>
           )}
+
+          {activeRepo && (
+            <>
+              <span className="text-[#27272a]">/</span>
+              <RepoSelector
+                repos={repos}
+                activeRepo={activeRepo}
+                onSelect={handleSelectRepo}
+              />
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -105,7 +195,7 @@ function App() {
               }`}
             />
             <span className="text-xs text-[#52525b]">
-              {isConnected ? 'GitHub' : 'Offline'}
+              {isDemo ? 'Demo' : isConnected ? 'GitHub' : 'Offline'}
             </span>
           </div>
           <button
@@ -148,74 +238,58 @@ function App() {
                     }`}
                   />
                   <span className="text-xs text-[#a1a1aa]">
-                    {isConnected ? 'Connected' : 'Not connected'}
+                    {isDemo
+                      ? 'Demo mode'
+                      : isConnected
+                      ? `Connected${validatedUser ? ` as ${validatedUser.login}` : ''}`
+                      : 'Not connected'}
                   </span>
                 </div>
               </div>
 
-              {isConnected ? (
+              {isConnected && (
                 <div className="space-y-2">
-                  <div className="rounded-lg border border-[#1a1a1e] bg-[#111113] px-3 py-2">
-                    <p className="text-xs text-[#52525b] mb-0.5">Token</p>
-                    <p className="text-sm text-[#a1a1aa] font-mono">
-                      {token.slice(0, 8)}{'...'}
-                    </p>
-                  </div>
+                  {!isDemo && (
+                    <div className="rounded-lg border border-[#1a1a1e] bg-[#111113] px-3 py-2">
+                      <p className="text-xs text-[#52525b] mb-0.5">Token</p>
+                      <p className="text-sm text-[#a1a1aa] font-mono">
+                        {token.slice(0, 8)}{'...'}
+                      </p>
+                    </div>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={logout}
+                    onClick={() => {
+                      handleDisconnect();
+                      setSettingsOpen(false);
+                    }}
                     className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
                   >
                     Disconnect
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    type="password"
-                    placeholder="ghp_xxxxxxxxxxxx"
-                    value={patInput}
-                    onChange={(e) => setPatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSavePat()}
-                    className="bg-[#111113] border-[#1a1a1e] text-[#fafafa] placeholder:text-[#52525b] font-mono text-sm"
-                  />
-                  <Button
-                    onClick={handleSavePat}
-                    disabled={!patInput.trim()}
-                    size="sm"
-                    className="w-full bg-[#0070f3] text-white hover:bg-[#0060d3]"
-                  >
-                    Connect
-                  </Button>
-                  <p className="text-xs text-[#52525b] leading-relaxed">
-                    Personal access token with <code className="text-[#a1a1aa] font-mono">repo</code> scope.
-                    Stored locally, never sent to our servers.
-                  </p>
-                </div>
               )}
             </div>
 
             {/* Danger Zone */}
-            {configured && (
-              <div className="space-y-3 pt-2 border-t border-[#1a1a1e]">
-                <label className="text-sm font-medium text-[#fafafa]">
-                  Data
-                </label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    deleteAllChats();
-                    setSettingsOpen(false);
-                  }}
-                  className="text-[#a1a1aa] hover:text-red-400 w-full justify-start gap-2"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete all chats
-                </Button>
-              </div>
-            )}
+            <div className="space-y-3 pt-2 border-t border-[#1a1a1e]">
+              <label className="text-sm font-medium text-[#fafafa]">
+                Data
+              </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  deleteAllChats();
+                  setSettingsOpen(false);
+                }}
+                className="text-[#a1a1aa] hover:text-red-400 w-full justify-start gap-2"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete all chats
+              </Button>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
