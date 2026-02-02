@@ -173,7 +173,7 @@ def list_dir(data: dict):
         "for f in * .*; do "
         "  [ \"$f\" = '.' ] || [ \"$f\" = '..' ] || [ \"$f\" = '*' ] && continue; "
         "  if [ -d \"$f\" ]; then printf 'd\\t0\\t%s\\n' \"$f\"; "
-        "  elif [ -f \"$f\" ]; then stat -c 'f\\t%s\\t%n' \"$f\" 2>/dev/null || printf 'f\\t0\\t%s\\n' \"$f\"; "
+        "  elif [ -f \"$f\" ]; then stat --printf 'f\\t%s\\t%n\\n' \"$f\" 2>/dev/null || printf 'f\\t0\\t%s\\n' \"$f\"; "
         "  fi; "
         "done"
     )
