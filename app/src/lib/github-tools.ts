@@ -6,7 +6,7 @@
  * result back into the conversation as a synthetic message.
  */
 
-import type { ToolExecutionResult, PRCardData, PRListCardData, CommitListCardData, BranchListCardData, CICheck, CIStatusCardData } from '@/types';
+import type { ToolExecutionResult, PRCardData, PRListCardData, CommitListCardData, BranchListCardData, FileListCardData, CICheck, CIStatusCardData } from '@/types';
 import { extractBareToolJsonObjects } from './tool-dispatch';
 
 const OAUTH_STORAGE_KEY = 'github_access_token';
@@ -396,7 +396,16 @@ async function executeListDirectory(repo: string, path: string = '', branch?: st
     lines.push(`  📄 ${f.name}${size}`);
   }
 
-  return { text: lines.join('\n') };
+  const cardData: FileListCardData = {
+    repo,
+    path: path || '/',
+    entries: [
+      ...dirs.map((d: any) => ({ name: d.name, type: 'directory' as const })),
+      ...files.map((f: any) => ({ name: f.name, type: 'file' as const, size: f.size })),
+    ],
+  };
+
+  return { text: lines.join('\n'), card: { type: 'file-list', data: cardData } };
 }
 
 async function executeListBranches(repo: string): Promise<ToolExecutionResult> {

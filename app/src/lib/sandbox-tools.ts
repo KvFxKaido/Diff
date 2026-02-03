@@ -8,7 +8,7 @@
  * Sandbox tools operate on a running Modal sandbox (persistent container).
  */
 
-import type { ToolExecutionResult, SandboxCardData, DiffPreviewCardData, CommitReviewCardData } from '@/types';
+import type { ToolExecutionResult, SandboxCardData, DiffPreviewCardData, CommitReviewCardData, FileListCardData } from '@/types';
 import { extractBareToolJsonObjects } from './tool-dispatch';
 import {
   execInSandbox,
@@ -216,7 +216,15 @@ export async function executeSandboxToolCall(
           lines.push(`  📄 ${f.name}${size}`);
         }
 
-        return { text: lines.join('\n') };
+        const cardData: FileListCardData = {
+          path: dirPath,
+          entries: [
+            ...dirs.map((d) => ({ name: d.name, type: 'directory' as const })),
+            ...files.map((f) => ({ name: f.name, type: 'file' as const, size: f.size || undefined })),
+          ],
+        };
+
+        return { text: lines.join('\n'), card: { type: 'file-list', data: cardData } };
       }
 
       case 'sandbox_write_file': {
