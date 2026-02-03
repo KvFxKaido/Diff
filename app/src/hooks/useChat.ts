@@ -501,7 +501,7 @@ export function useChat(activeRepoFullName: string | null) {
           }
 
           // --- Tool call detected ---
-          console.log(`[Diff] Tool call detected:`, toolCall);
+          console.log(`[Push] Tool call detected:`, toolCall);
 
           // Mark assistant message as tool call
           setConversations((prev) => {

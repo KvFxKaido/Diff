@@ -589,7 +589,7 @@ export async function executeToolCall(call: ToolCall, allowedRepo: string): Prom
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Diff] Tool execution error:`, msg);
+    console.error(`[Push] Tool execution error:`, msg);
     return { text: `[Tool Error] ${msg}` };
   }
 }

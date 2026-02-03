@@ -185,7 +185,7 @@ export async function streamMoonshotChat(
   };
 
   try {
-    console.log(`[Diff] POST ${KIMI_API_URL} (model: ${model})`);
+    console.log(`[Push] POST ${KIMI_API_URL} (model: ${model})`);
 
     const response = await fetch(KIMI_API_URL, {
       method: 'POST',
@@ -215,7 +215,7 @@ export async function streamMoonshotChat(
       } catch {
         detail = body ? body.slice(0, 200) : 'empty body';
       }
-      console.error(`[Diff] Moonshot error: ${response.status}`, detail);
+      console.error(`[Push] Moonshot error: ${response.status}`, detail);
       throw new Error(`Moonshot ${response.status}: ${detail}`);
     }
 
@@ -301,13 +301,13 @@ export async function streamMoonshotChat(
       const timeoutMsg = abortReason === 'connect'
         ? `Kimi API didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be down.`
         : `Kimi API stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
-      console.error(`[Diff] Moonshot timeout (${abortReason}):`, timeoutMsg);
+      console.error(`[Push] Moonshot timeout (${abortReason}):`, timeoutMsg);
       onError(new Error(timeoutMsg));
       return;
     }
 
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Diff] Moonshot chat error:`, msg);
+    console.error(`[Push] Moonshot chat error:`, msg);
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
       onError(new Error(
         `Cannot reach Moonshot — network error. Check your connection.`

@@ -273,7 +273,7 @@ export async function executeSandboxToolCall(
         // Step 2: Run Auditor
         const auditResult = await runAuditor(
           diffResult.diff,
-          (phase) => console.log(`[Diff] Auditor: ${phase}`),
+          (phase) => console.log(`[Push] Auditor: ${phase}`),
         );
 
         if (auditResult.verdict === 'unsafe') {
@@ -320,7 +320,7 @@ export async function executeSandboxToolCall(
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[Diff] Sandbox tool error:', msg);
+    console.error('[Push] Sandbox tool error:', msg);
     return { text: `[Tool Error] ${msg}` };
   }
 }

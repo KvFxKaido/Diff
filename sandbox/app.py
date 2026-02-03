@@ -25,7 +25,7 @@ sandbox_image = (
         "apt-get install -y nodejs",
         # Default git identity — overridden per-session when GitHub token is available
         "git config --global user.email 'sandbox@diff.app'",
-        "git config --global user.name 'Diff User'",
+        "git config --global user.name 'Push User'",
     )
 )
 
@@ -45,12 +45,12 @@ def _fetch_github_user(token: str) -> tuple[str, str]:
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             user = json.loads(resp.read())
-        name = user.get("name") or user.get("login", "Diff User")
+        name = user.get("name") or user.get("login", "Push User")
         login = user.get("login", "user")
         email = user.get("email") or f"{login}@users.noreply.github.com"
         return name, email
     except Exception:
-        return "Diff User", "sandbox@diff.app"
+        return "Push User", "sandbox@push.app"
 
 
 @app.function(image=endpoint_image)
@@ -90,7 +90,7 @@ def create(data: dict):
     if github_token:
         name, email = _fetch_github_user(github_token)
     else:
-        name, email = "Diff User", "sandbox@diff.app"
+        name, email = "Push User", "sandbox@push.app"
     sb.exec("git", "config", "--global", "user.name", name).wait()
     sb.exec("git", "config", "--global", "user.email", email).wait()
 
