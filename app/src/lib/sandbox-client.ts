@@ -92,11 +92,22 @@ export async function execInSandbox(
   command: string,
   workdir?: string,
 ): Promise<ExecResult> {
-  return sandboxFetch<ExecResult>('exec', {
-    sandbox_id: sandboxId,
-    command,
-    workdir: workdir || '/workspace',
-  }, EXEC_TIMEOUT_MS);
+  // API returns snake_case, we need camelCase
+  const raw = await sandboxFetch<{ stdout: string; stderr: string; exit_code: number; truncated: boolean }>(
+    'exec',
+    {
+      sandbox_id: sandboxId,
+      command,
+      workdir: workdir || '/workspace',
+    },
+    EXEC_TIMEOUT_MS,
+  );
+  return {
+    stdout: raw.stdout,
+    stderr: raw.stderr,
+    exitCode: raw.exit_code,
+    truncated: raw.truncated,
+  };
 }
 
 export async function readFromSandbox(
