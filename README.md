@@ -1,4 +1,4 @@
-# Diff
+# Push
 
 Mobile-first AI coding agent with direct GitHub repo access. Chat with your codebase — review PRs, explore changes, and ship code from your phone.
 
