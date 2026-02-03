@@ -720,9 +720,10 @@ export function useChat(activeRepoFullName: string | null) {
             );
 
             if (commitResult.exitCode !== 0) {
+              const errorDetail = commitResult.stderr || commitResult.stdout || 'Unknown error';
               updateCardInMessage(chatId, action.messageId, action.cardIndex, (card) => {
                 if (card.type !== 'commit-review') return card;
-                return { ...card, data: { ...card.data, status: 'error', error: `Commit failed: ${commitResult.stderr}` } as CommitReviewCardData };
+                return { ...card, data: { ...card.data, status: 'error', error: `Commit failed: ${errorDetail}` } as CommitReviewCardData };
               });
               return;
             }
@@ -736,9 +737,10 @@ export function useChat(activeRepoFullName: string | null) {
             const pushResult = await execInSandbox(sandboxId, 'cd /workspace && git push origin HEAD');
 
             if (pushResult.exitCode !== 0) {
+              const pushErrorDetail = pushResult.stderr || pushResult.stdout || 'Unknown error';
               updateCardInMessage(chatId, action.messageId, action.cardIndex, (card) => {
                 if (card.type !== 'commit-review') return card;
-                return { ...card, data: { ...card.data, status: 'error', error: `Push failed: ${pushResult.stderr}` } as CommitReviewCardData };
+                return { ...card, data: { ...card.data, status: 'error', error: `Push failed: ${pushErrorDetail}` } as CommitReviewCardData };
               });
               return;
             }
