@@ -14,6 +14,57 @@ const KIMI_API_URL = import.meta.env.DEV
   : '/api/kimi/chat';
 const KIMI_MODEL = 'k2p5';
 
+// Rolling window config — keeps context focused and latency low
+const MAX_HISTORY_MESSAGES = 30;
+
+// ---------------------------------------------------------------------------
+// Rolling Window — trims old messages while keeping tool call/result pairs intact
+// ---------------------------------------------------------------------------
+
+/**
+ * Trim messages to a rolling window, preserving tool call/result pairs.
+ *
+ * Tool calls and their results are a logical unit — splitting them causes
+ * the LLM to hallucinate about what tool was called or misinterpret results.
+ *
+ * Algorithm: Walk backwards, keeping messages until we hit the limit.
+ * If we include a tool result, also include the preceding tool call.
+ */
+function trimToRollingWindow(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= MAX_HISTORY_MESSAGES) {
+    return messages;
+  }
+
+  const kept: ChatMessage[] = [];
+  let count = 0;
+  let i = messages.length - 1;
+
+  while (i >= 0 && count < MAX_HISTORY_MESSAGES) {
+    const msg = messages[i];
+
+    // If this is a tool result, we must also keep the preceding assistant message (tool call)
+    if (msg.isToolResult && i > 0) {
+      const toolCall = messages[i - 1];
+      // Add both: tool call first, then result
+      kept.unshift(msg);
+      kept.unshift(toolCall);
+      count += 2;
+      i -= 2;
+    } else {
+      kept.unshift(msg);
+      count++;
+      i--;
+    }
+  }
+
+  // Log when we truncate (helpful for debugging)
+  if (messages.length > kept.length) {
+    console.log(`[Push] Rolling window: ${messages.length} → ${kept.length} messages`);
+  }
+
+  return kept;
+}
+
 // ---------------------------------------------------------------------------
 // Shared: system prompt, demo text, message builder
 // ---------------------------------------------------------------------------
@@ -84,7 +135,10 @@ function toLLMMessages(
     { role: 'system', content: systemContent },
   ];
 
-  for (const msg of messages) {
+  // Apply rolling window to keep context focused
+  const windowedMessages = trimToRollingWindow(messages);
+
+  for (const msg of windowedMessages) {
     // Check for attachments (multimodal message)
     if (msg.attachments && msg.attachments.length > 0) {
       const contentParts: LLMMessageContent[] = [];

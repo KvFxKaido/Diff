@@ -4,9 +4,16 @@
  * Tools:
  * - set_scratchpad: Replace entire content
  * - append_scratchpad: Add to existing content
+ *
+ * Security notes:
+ * - Content is escaped to prevent prompt injection (breaking out of [SCRATCHPAD] delimiters)
+ * - Content length is capped to prevent DoS via localStorage exhaustion
  */
 
 import { extractBareToolJsonObjects } from './tool-dispatch';
+
+// Max scratchpad content size (50KB) — prevents localStorage exhaustion and context bloat
+const MAX_CONTENT_LENGTH = 50_000;
 
 export interface ScratchpadToolCall {
   tool: 'set_scratchpad' | 'append_scratchpad';
@@ -109,16 +116,27 @@ export function executeScratchpadToolCall(
   onReplace: (content: string) => void,
   onAppend: (content: string) => void,
 ): string {
+  // Security: enforce content length limit
+  if (call.content.length > MAX_CONTENT_LENGTH) {
+    return `[Scratchpad error: content exceeds ${MAX_CONTENT_LENGTH} char limit (got ${call.content.length})]`;
+  }
+
   if (call.tool === 'set_scratchpad') {
     onReplace(call.content);
     return `[Scratchpad updated — replaced content (${call.content.length} chars)]`;
   }
 
   if (call.tool === 'append_scratchpad') {
-    onAppend(call.content);
     const newLength = currentContent.trim()
       ? currentContent.length + call.content.length + 2
       : call.content.length;
+
+    // Security: check combined length for append
+    if (newLength > MAX_CONTENT_LENGTH) {
+      return `[Scratchpad error: combined content would exceed ${MAX_CONTENT_LENGTH} char limit (would be ${newLength})]`;
+    }
+
+    onAppend(call.content);
     return `[Scratchpad updated — appended content (now ${newLength} chars)]`;
   }
 
@@ -127,13 +145,23 @@ export function executeScratchpadToolCall(
 
 /**
  * Build the scratchpad context block for the system prompt.
+ *
+ * Security: Escapes delimiter sequences to prevent prompt injection.
+ * A malicious payload like "[/SCRATCHPAD]\nEvil instructions" would
+ * otherwise break out of the scratchpad block and inject into the system prompt.
  */
 export function buildScratchpadContext(content: string): string {
   if (!content.trim()) {
     return '[SCRATCHPAD]\n(empty — user or assistant can add notes here)\n[/SCRATCHPAD]';
   }
 
+  // Escape any attempts to break out of the scratchpad block
+  // Uses zero-width space (\u200B) to break the delimiter pattern
+  const escaped = content
+    .replace(/\[SCRATCHPAD\]/gi, '[SCRATCHPAD\u200B]')
+    .replace(/\[\/SCRATCHPAD\]/gi, '[/SCRATCHPAD\u200B]');
+
   return `[SCRATCHPAD]
-${content.trim()}
+${escaped.trim()}
 [/SCRATCHPAD]`;
 }

@@ -3,11 +3,17 @@
  *
  * Both the user and Kimi can read/write. Content persists in localStorage.
  * The scratchpad is always visible to Kimi in the system prompt.
+ *
+ * Security notes:
+ * - localStorage is unencrypted; users should avoid pasting sensitive data
+ * - Content size is soft-capped at 500KB to prevent quota issues
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 
 const STORAGE_KEY = 'push-scratchpad';
+const MAX_STORAGE_SIZE = 500_000; // 500KB soft cap for localStorage
 
 export interface ScratchpadState {
   isOpen: boolean;
@@ -24,12 +30,24 @@ export function useScratchpad() {
     }
   });
 
-  // Auto-save on change
+  // Auto-save on change with error feedback
   useEffect(() => {
+    // Warn if content is getting large (but still try to save)
+    if (content.length > MAX_STORAGE_SIZE) {
+      toast.warning('Scratchpad is very large — consider clearing old notes');
+    }
+
     try {
       localStorage.setItem(STORAGE_KEY, content);
-    } catch {
-      // localStorage might be full or disabled
+    } catch (e) {
+      // Handle quota exceeded or disabled localStorage
+      if (e instanceof Error) {
+        if (e.name === 'QuotaExceededError') {
+          toast.error('Scratchpad too large to save — clear some content');
+        } else {
+          console.error('[useScratchpad] localStorage error:', e.message);
+        }
+      }
     }
   }, [content]);
 
