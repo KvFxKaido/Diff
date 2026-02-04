@@ -980,3 +980,58 @@ Card-based over separate panel UI
 
 
 Keep it simple. Ship Phase 1 fast. Iterate based on usage.
+
+---
+
+## Addendum: Plan Superseded (Feb 2026)
+
+**Status:** This plan was not implemented as designed.
+
+### What We Built Instead
+
+A simpler **session scratchpad** — a persistent slide-out drawer that both user and Kimi can edit. No cards, no explicit sharing, no turn-based protocol.
+
+**Implementation:**
+- `hooks/useScratchpad.ts` — state + localStorage persistence
+- `components/chat/ScratchpadDrawer.tsx` — slide-out panel (right on desktop, bottom on mobile)
+- `components/chat/ScratchpadButton.tsx` — toggle button with content indicator
+- `lib/scratchpad-tools.ts` — `set_scratchpad` and `append_scratchpad` tools
+
+### Why We Changed Direction
+
+The original plan optimized for **sharing discrete artifacts** ("here's some code, review it"). But the actual use case was **accumulating ideas throughout a session** ("add this to our notes", "update the requirements").
+
+Key differences:
+
+| Original Plan | What We Built |
+|---------------|---------------|
+| Card-based artifacts in chat | Persistent drawer, always accessible |
+| Explicit "share" action | Always in Kimi's context |
+| Turn-based (share → suggest → accept) | Continuous (both edit anytime) |
+| Message-scoped | Session-scoped |
+| Complex (4 phases, ~200 lines per component) | Simple (~200 lines total) |
+
+### The Core Insight
+
+> "My biggest issue with Canvas and Artifacts is that I can't pull it up myself."
+
+The original plan replicated the Canvas/Artifacts pattern — AI-initiated, ephemeral, card-based. But the real need was a **user-initiated shared notepad** that persists across the conversation.
+
+The simpler solution:
+1. Button in ChatInput to open drawer
+2. Textarea you can edit directly
+3. Kimi sees content every turn via `[SCRATCHPAD]` block in system prompt
+4. Kimi can update via simple tools (`set_scratchpad`, `append_scratchpad`)
+5. Content persists in localStorage
+
+No cards. No explicit sharing. No phases. Just a shared notepad.
+
+### Lessons Learned
+
+1. **Talk through the use case before designing** — The original plan was well-architected but solved the wrong problem.
+
+2. **"Boring is correct" applies to features, not just code** — A textarea in a drawer is less impressive than rich inline cards, but it's what the user actually needed.
+
+3. **User-initiated > AI-initiated** — Artifacts/Canvas feel magical when the AI creates them, but frustrating when you can't access them on demand.
+
+4. **Session state vs message state** — Not everything belongs in the chat timeline. Some things are working documents, not conversation artifacts.
