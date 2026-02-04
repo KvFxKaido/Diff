@@ -30,6 +30,40 @@ export interface DiffResult {
   truncated: boolean;
 }
 
+// --- Error types ---
+
+export interface SandboxError {
+  error: string;
+  code?: string;
+  details?: string;
+}
+
+// User-friendly error messages for each error code
+const ERROR_MESSAGES: Record<string, string> = {
+  MODAL_NOT_CONFIGURED: 'Sandbox is not configured. Ask your admin to set up MODAL_SANDBOX_BASE_URL.',
+  MODAL_URL_INVALID: 'Sandbox URL is misconfigured. The MODAL_SANDBOX_BASE_URL format is incorrect.',
+  MODAL_URL_TRAILING_SLASH: 'Sandbox URL has a trailing slash. Remove it from MODAL_SANDBOX_BASE_URL.',
+  MODAL_NOT_FOUND: 'Sandbox app not deployed. Run: cd sandbox && modal deploy app.py',
+  MODAL_AUTH_FAILED: 'Modal authentication failed. Your Modal tokens may have expired.',
+  MODAL_UNAVAILABLE: 'Sandbox is starting up. Try again in a few seconds.',
+  MODAL_TIMEOUT: 'Sandbox operation timed out. Try a simpler command.',
+  MODAL_NETWORK_ERROR: 'Cannot connect to the sandbox. Check your network or Modal status.',
+  MODAL_UNKNOWN_ERROR: 'An unexpected sandbox error occurred.',
+};
+
+function formatSandboxError(status: number, body: string): Error {
+  try {
+    const parsed = JSON.parse(body) as SandboxError;
+    const code = parsed.code || 'UNKNOWN';
+    const friendlyMessage = ERROR_MESSAGES[code] || parsed.error || 'Sandbox error';
+    const details = parsed.details ? `\n\nDetails: ${parsed.details}` : '';
+    return new Error(`${friendlyMessage} (${code})${details}`);
+  } catch {
+    // Body wasn't JSON, fall back to raw text
+    return new Error(`Sandbox error (${status}): ${body.slice(0, 200)}`);
+  }
+}
+
 // --- Helpers ---
 
 const SANDBOX_BASE = '/api/sandbox';
@@ -54,7 +88,7 @@ async function sandboxFetch<T>(
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Sandbox ${endpoint} failed (${res.status}): ${text.slice(0, 200)}`);
+      throw formatSandboxError(res.status, text);
     }
 
     return res.json();

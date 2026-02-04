@@ -178,7 +178,28 @@ async function handleSandbox(request: Request, env: Env, requestUrl: URL, route:
 
   const baseUrl = env.MODAL_SANDBOX_BASE_URL;
   if (!baseUrl) {
-    return Response.json({ error: 'Sandbox not available — MODAL_SANDBOX_BASE_URL not configured' }, { status: 503 });
+    return Response.json({
+      error: 'Sandbox not configured',
+      code: 'MODAL_NOT_CONFIGURED',
+      details: 'MODAL_SANDBOX_BASE_URL secret is not set. Run: npx wrangler secret put MODAL_SANDBOX_BASE_URL',
+    }, { status: 503 });
+  }
+
+  // Validate URL format to catch common configuration mistakes
+  if (!baseUrl.startsWith('https://') || !baseUrl.includes('--')) {
+    return Response.json({
+      error: 'Sandbox misconfigured',
+      code: 'MODAL_URL_INVALID',
+      details: `MODAL_SANDBOX_BASE_URL must be https://<username>--push-sandbox (got: ${baseUrl.slice(0, 50)}...)`,
+    }, { status: 503 });
+  }
+
+  if (baseUrl.endsWith('/')) {
+    return Response.json({
+      error: 'Sandbox misconfigured',
+      code: 'MODAL_URL_TRAILING_SLASH',
+      details: 'MODAL_SANDBOX_BASE_URL must not have a trailing slash. Remove the trailing / and redeploy.',
+    }, { status: 503 });
   }
 
   // Validate origin
@@ -229,8 +250,27 @@ async function handleSandbox(request: Request, env: Env, requestUrl: URL, route:
     if (!upstream.ok) {
       const errBody = await upstream.text().catch(() => '');
       console.error(`[api/sandbox/${route}] Modal ${upstream.status}: ${errBody.slice(0, 500)}`);
+
+      // Provide actionable error messages based on status code
+      let code = 'MODAL_ERROR';
+      let details = errBody.slice(0, 200);
+
+      if (upstream.status === 404) {
+        code = 'MODAL_NOT_FOUND';
+        details = `Modal endpoint not found. The app may not be deployed. Run: cd sandbox && modal deploy app.py`;
+      } else if (upstream.status === 401 || upstream.status === 403) {
+        code = 'MODAL_AUTH_FAILED';
+        details = 'Modal authentication failed. Check that your Modal tokens are valid and the app is deployed under the correct account.';
+      } else if (upstream.status === 502 || upstream.status === 503) {
+        code = 'MODAL_UNAVAILABLE';
+        details = 'Modal is temporarily unavailable. The container may be cold-starting. Try again in a few seconds.';
+      } else if (upstream.status === 504) {
+        code = 'MODAL_TIMEOUT';
+        details = 'Modal request timed out. The operation took too long to complete.';
+      }
+
       return Response.json(
-        { error: `Sandbox error ${upstream.status}: ${errBody.slice(0, 200)}` },
+        { error: `Sandbox error (${upstream.status})`, code, details },
         { status: upstream.status },
       );
     }
@@ -241,10 +281,30 @@ async function handleSandbox(request: Request, env: Env, requestUrl: URL, route:
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout = err instanceof Error && err.name === 'AbortError';
     console.error(`[api/sandbox/${route}] Error: ${message}`);
-    return Response.json(
-      { error: isTimeout ? 'Sandbox request timed out' : message },
-      { status: isTimeout ? 504 : 500 },
-    );
+
+    if (isTimeout) {
+      return Response.json({
+        error: 'Sandbox request timed out',
+        code: 'MODAL_TIMEOUT',
+        details: 'The sandbox took longer than 60 seconds to respond. Try a simpler operation or check Modal dashboard for issues.',
+      }, { status: 504 });
+    }
+
+    // Check for common network errors
+    const isNetworkError = message.includes('fetch failed') || message.includes('ECONNREFUSED') || message.includes('network');
+    if (isNetworkError) {
+      return Response.json({
+        error: 'Cannot reach Modal',
+        code: 'MODAL_NETWORK_ERROR',
+        details: `Network error connecting to Modal. Check that the MODAL_SANDBOX_BASE_URL is correct and Modal is not experiencing outages. (${message})`,
+      }, { status: 502 });
+    }
+
+    return Response.json({
+      error: 'Sandbox error',
+      code: 'MODAL_UNKNOWN_ERROR',
+      details: message,
+    }, { status: 500 });
   }
 }
 

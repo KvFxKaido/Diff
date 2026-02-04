@@ -21,10 +21,53 @@ jobs:
       - name: Install Modal CLI
         run: pip install modal
 
+      - name: Verify Modal credentials
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::error::Modal credentials not configured. Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in GitHub Secrets."
+            echo ""
+            echo "To fix this:"
+            echo "1. Go to https://modal.com/settings and create a new API token"
+            echo "2. In GitHub repo Settings → Secrets → Actions, add:"
+            echo "   - MODAL_TOKEN_ID: your token ID"
+            echo "   - MODAL_TOKEN_SECRET: your token secret"
+            exit 1
+          fi
+          echo "✓ Modal credentials are configured"
+
       - name: Deploy to Modal
+        id: deploy
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
           cd sandbox
-          modal deploy app.py
+          echo "Deploying Modal app..."
+          if modal deploy app.py 2>&1 | tee deploy.log; then
+            echo "✓ Modal deployment successful"
+            # Extract the base URL from the deployment output
+            grep -oP 'https://[a-zA-Z0-9_-]+--push-sandbox' deploy.log | head -1 || true
+          else
+            echo "::error::Modal deployment failed. Check the logs above."
+            echo ""
+            echo "Common causes:"
+            echo "1. Modal tokens expired → Regenerate at https://modal.com/settings"
+            echo "2. Modal account issue → Check https://modal.com/apps for errors"
+            echo "3. Python syntax error → Run 'python -m py_compile app.py' locally"
+            exit 1
+          fi
+
+      - name: Remind about Cloudflare secret
+        if: success()
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "IMPORTANT: After deployment, ensure your"
+          echo "Cloudflare Worker has the correct URL:"
+          echo ""
+          echo "  npx wrangler secret put MODAL_SANDBOX_BASE_URL"
+          echo "  (enter: https://<username>--push-sandbox)"
+          echo "=========================================="
