@@ -40,16 +40,25 @@ Models are replaceable; roles are locked. The user never picks a model.
 
 Tools are prompt-engineered — the system prompt defines available tools and JSON format. The agent emits JSON tool blocks, the client executes them, injects results as synthetic messages, and re-calls the LLM (up to 3 rounds for Orchestrator, 5 for Coder).
 
+### Scratchpad
+
+A shared notepad that both the user and AI can read/write. Content persists in localStorage and is always injected into the system prompt. Tools: `set_scratchpad` (replace) and `append_scratchpad` (add). Useful for consolidating ideas, requirements, and decisions throughout a session.
+
+### Rolling Window
+
+Context is trimmed to the last 30 messages before sending to Kimi. Tool call/result pairs are kept together to prevent orphaned results. This reduces latency and keeps the LLM focused on recent conversation.
+
 ### Data Flow
 
 1. **Onboard** → Validate GitHub PAT
 2. **Pick repo** → Select from user's repos (hard-locked context)
 3. **Chat** → Ask about PRs, changes, codebase
 4. **Tools** → JSON tool blocks → execute against GitHub API or sandbox
-5. **Sandbox** → Clone repo to container, run commands, edit files
-6. **Coder** → Autonomous coding task execution
-7. **Auditor** → Every commit gets safety verdict before landing
-8. **Cards** → Structured results render as inline cards
+5. **Scratchpad** → Shared notepad for ideas/requirements (user + AI can edit)
+6. **Sandbox** → Clone repo to container, run commands, edit files
+7. **Coder** → Autonomous coding task execution
+8. **Auditor** → Every commit gets safety verdict before landing
+9. **Cards** → Structured results render as inline cards
 
 ## Directory Structure
 
@@ -64,17 +73,18 @@ Push/
 │   ├── src/
 │   │   ├── App.tsx        # Root component, screen state machine
 │   │   ├── components/
-│   │   │   ├── chat/      # Chat UI (ChatContainer, ChatInput, MessageBubble)
+│   │   │   ├── chat/      # Chat UI (ChatContainer, ChatInput, MessageBubble, ScratchpadDrawer)
 │   │   │   ├── cards/     # Rich inline cards (PRCard, SandboxCard, DiffPreviewCard, etc.)
 │   │   │   ├── filebrowser/  # File browser components
 │   │   │   └── ui/        # shadcn/ui component library
 │   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, etc.)
 │   │   ├── lib/           # Core logic and agent modules
-│   │   │   ├── orchestrator.ts    # System prompt, SSE streaming
+│   │   │   ├── orchestrator.ts    # System prompt, SSE streaming, rolling window
 │   │   │   ├── github-tools.ts    # GitHub tool protocol
 │   │   │   ├── sandbox-tools.ts   # Sandbox tool definitions
+│   │   │   ├── scratchpad-tools.ts # Scratchpad tool definitions + security
 │   │   │   ├── sandbox-client.ts  # HTTP client for sandbox API
-│   │   │   ├── tool-dispatch.ts   # Unified tool dispatch
+│   │   │   ├── tool-dispatch.ts   # Unified tool dispatch (GitHub + Sandbox + Scratchpad)
 │   │   │   ├── coder-agent.ts     # Coder sub-agent loop
 │   │   │   ├── auditor-agent.ts   # Auditor review + verdict
 │   │   │   ├── workspace-context.ts  # Active repo context builder
@@ -101,11 +111,12 @@ Push/
 
 | File | Purpose |
 |------|---------|
-| `lib/orchestrator.ts` | SSE streaming to Kimi, think-token parsing, `streamMoonshotChat` export |
+| `lib/orchestrator.ts` | SSE streaming to Kimi, think-token parsing, rolling window context |
 | `lib/github-tools.ts` | GitHub tool protocol, `delegate_coder` function |
 | `lib/sandbox-tools.ts` | Sandbox tool definitions, `SANDBOX_TOOL_PROTOCOL` prompt |
+| `lib/scratchpad-tools.ts` | Scratchpad tools (`set_scratchpad`, `append_scratchpad`), prompt injection escaping |
 | `lib/sandbox-client.ts` | HTTP client for `/api/sandbox/*` endpoints |
-| `lib/tool-dispatch.ts` | Unified dispatch for GitHub + Sandbox + delegation tools |
+| `lib/tool-dispatch.ts` | Unified dispatch for GitHub + Sandbox + Scratchpad + delegation tools |
 | `lib/coder-agent.ts` | Coder autonomous loop (up to 5 rounds) |
 | `lib/auditor-agent.ts` | Auditor review + binary verdict (fail-safe to UNSAFE) |
 | `lib/workspace-context.ts` | Builds active repo context for system prompt injection |
@@ -115,8 +126,9 @@ Push/
 
 | File | Purpose |
 |------|---------|
-| `hooks/useChat.ts` | Chat state, message history, unified tool execution loop |
+| `hooks/useChat.ts` | Chat state, message history, unified tool execution loop, scratchpad integration |
 | `hooks/useSandbox.ts` | Sandbox session lifecycle (idle → creating → ready → error) |
+| `hooks/useScratchpad.ts` | Shared notepad state, localStorage persistence, content size limits |
 | `hooks/useGitHubAuth.ts` | PAT validation, OAuth flow, mount re-validation |
 | `hooks/useRepos.ts` | Repo list fetching, sync tracking, activity detection |
 | `hooks/useActiveRepo.ts` | Active repo selection + localStorage persistence |
@@ -220,6 +232,9 @@ Without API keys, the app runs in demo mode with mock repos and welcome message.
 - Auditor defaults to UNSAFE on any error (fail-safe design)
 - Repo context is hard-locked — Orchestrator only sees selected repo
 - Sandbox containers auto-terminate after 30 minutes
+- Scratchpad content is escaped to prevent prompt injection (delimiter breakout)
+- Scratchpad content capped at 50KB to prevent DoS via tool flooding
+- Rolling window keeps last 30 messages, preserving tool call/result pairs
 
 ## Common Tasks
 

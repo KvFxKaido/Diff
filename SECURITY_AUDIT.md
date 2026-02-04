@@ -49,5 +49,29 @@ Scope: `app/worker.ts`, `app/src/hooks/useGitHubAuth.ts`, `app/src/hooks/useChat
 - Description: The UI reveals the first 8 characters of the GitHub token. This can leak sensitive data during screen sharing or shoulder surfing.
 - Recommendation: Remove token display entirely or hide it behind a user action (e.g., “reveal” with confirmation).
 
+### 9) Scratchpad prompt injection — MITIGATED
+- Severity: ~~CRITICAL~~ MITIGATED
+- File and line: `app/src/lib/scratchpad-tools.ts:128`, `app/src/lib/orchestrator.ts:78`
+- Description: Scratchpad content is injected into the system prompt, which is a trusted context. Malicious content like `[/SCRATCHPAD]\nIgnore previous instructions...` could break out of the delimiter and inject arbitrary instructions.
+- Mitigation: `buildScratchpadContext()` now escapes `[SCRATCHPAD]` and `[/SCRATCHPAD]` sequences using zero-width spaces (`\u200B`) to prevent delimiter breakout. Content length is capped at 50KB.
+- Residual risk: Sophisticated Unicode normalization attacks might bypass escaping. Acceptable for current threat model (user is collaborator, not attacker).
+
+### 10) Scratchpad content in localStorage
+- Severity: MEDIUM
+- File and line: `app/src/hooks/useScratchpad.ts:27`
+- Description: Scratchpad content persists in `localStorage` unencrypted. If users paste sensitive data (API keys, credentials), it remains accessible to any JavaScript on the origin.
+- Mitigation: Added toast warnings for large content and quota errors. Users are expected not to paste sensitive credentials.
+- Recommendation: Add a warning in the placeholder text about not pasting secrets. Consider `sessionStorage` for stricter session scope.
+
+### 11) Scratchpad tool DoS via content flooding — MITIGATED
+- Severity: ~~HIGH~~ MITIGATED
+- File and line: `app/src/lib/scratchpad-tools.ts:106`
+- Description: LLM-generated tool calls could flood the scratchpad with megabytes of content, exhausting localStorage quota and degrading performance.
+- Mitigation: `executeScratchpadToolCall()` enforces a 50KB content limit for `set_scratchpad` and validates combined length for `append_scratchpad`. Errors are returned to the LLM.
+
 ## Notes
 - `.env` was not present in the repo root. `.gitignore` correctly ignores `.env` and `.env.*` files (`.gitignore:8`).
+
+## Audit History
+- **Feb 1, 2026**: Initial audit of core auth, tool execution, and proxy security.
+- **Feb 4, 2026**: Added scratchpad feature security findings (prompt injection, localStorage, DoS). Mitigations implemented.

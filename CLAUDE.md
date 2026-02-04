@@ -42,14 +42,18 @@ AI runs through a single provider: **Kimi For Coding** (`api.kimi.com`). The API
 
 **Repo hard lock:** The Orchestrator only sees the active repo in its context. Other repos are stripped entirely. Repo switching is UI-only via the header dropdown.
 
+**Scratchpad:** A shared notepad that both the user and Kimi can read/write. User opens via button in ChatInput, Kimi updates via `set_scratchpad` / `append_scratchpad` tools. Content persists in localStorage and is always injected into the system prompt. Useful for consolidating ideas, requirements, and decisions throughout a session. Content is escaped to prevent prompt injection.
+
+**Rolling window:** Context is trimmed to the last 30 messages before sending to Kimi. Tool call/result pairs are kept together to prevent orphaned results. This reduces latency and keeps the LLM focused on recent conversation without losing critical tool context.
+
 ## Project Layout
 
 ```
 app/src/
-  components/chat/   # Chat UI (ChatContainer, ChatInput, MessageBubble, RepoSelector)
+  components/chat/   # Chat UI (ChatContainer, ChatInput, MessageBubble, ScratchpadDrawer, etc.)
   components/cards/  # Rich inline cards (PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, etc.)
   components/ui/     # shadcn/ui component library
-  hooks/             # React hooks (useChat, useGitHubAuth, useRepos, useActiveRepo, useSandbox, useMoonshotKey)
+  hooks/             # React hooks (useChat, useGitHubAuth, useRepos, useActiveRepo, useSandbox, useScratchpad, etc.)
   lib/               # Orchestrator, tool protocol, sandbox client, agent modules, workspace context
   sections/          # Screen components (OnboardingScreen, RepoPicker)
   types/             # TypeScript type definitions
@@ -62,17 +66,19 @@ wrangler.jsonc       # Cloudflare Workers config (repo root)
 
 ## Key Files
 
-- `lib/orchestrator.ts` — System prompt, Kimi For Coding streaming (SSE), think-token parsing, exported `streamMoonshotChat` for sub-agents
+- `lib/orchestrator.ts` — System prompt, Kimi streaming (SSE), think-token parsing, rolling window context management
 - `lib/github-tools.ts` — GitHub tool protocol (prompt-engineered function calling via JSON blocks) + `delegate_coder`
 - `lib/sandbox-tools.ts` — Sandbox tool definitions, detection, execution, `SANDBOX_TOOL_PROTOCOL` prompt
 - `lib/sandbox-client.ts` — HTTP client for `/api/sandbox/*` endpoints (thin fetch wrappers)
-- `lib/tool-dispatch.ts` — Unified tool dispatch (GitHub + Sandbox + delegation)
+- `lib/scratchpad-tools.ts` — Scratchpad tool definitions (`set_scratchpad`, `append_scratchpad`), prompt injection escaping
+- `lib/tool-dispatch.ts` — Unified tool dispatch (GitHub + Sandbox + Scratchpad + delegation)
 - `lib/coder-agent.ts` — Coder sub-agent loop (Kimi K2.5, up to 5 autonomous rounds)
 - `lib/auditor-agent.ts` — Auditor review + verdict (Kimi K2.5, fail-safe to UNSAFE)
 - `lib/workspace-context.ts` — Builds active repo context for system prompt injection
 - `lib/providers.ts` — AI provider config and role-to-model mapping
-- `hooks/useChat.ts` — Chat state, message history, unified tool execution loop, Coder delegation
+- `hooks/useChat.ts` — Chat state, message history, unified tool execution loop, Coder delegation, scratchpad integration
 - `hooks/useSandbox.ts` — Sandbox session lifecycle (idle → creating → ready → error)
+- `hooks/useScratchpad.ts` — Shared notepad state, localStorage persistence, content size limits
 - `hooks/useGitHubAuth.ts` — PAT validation, OAuth flow, mount re-validation
 - `hooks/useActiveRepo.ts` — Active repo selection + localStorage persistence
 - `hooks/useRepos.ts` — Repo list fetching, sync tracking, activity detection

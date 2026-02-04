@@ -9,6 +9,7 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 - **Chat-first** — conversation is the primary interface, not forms or dashboards
 - **Repo-locked context** — select a repo and the agent only sees that repo
 - **Tool protocol** — the agent calls GitHub's API mid-conversation (PRs, commits, diffs)
+- **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
 - **Streaming** — responses arrive token-by-token with visible thinking
 - **Demo mode** — works with mock data when no credentials are configured
 
@@ -67,8 +68,8 @@ Push/
 │   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, RepoSelector
 │   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, etc.
 │   │   │   └── ui/        # shadcn/ui component library
-│   │   ├── hooks/         # useChat, useSandbox, useGitHubAuth, useRepos, useActiveRepo
-│   │   ├── lib/           # orchestrator, tool-dispatch, sandbox-client, coder-agent, auditor-agent
+│   │   ├── hooks/         # useChat, useSandbox, useScratchpad, useGitHubAuth, useRepos, useActiveRepo
+│   │   ├── lib/           # orchestrator, tool-dispatch, scratchpad-tools, sandbox-client, coder-agent
 │   │   ├── sections/      # OnboardingScreen, RepoPicker
 │   │   ├── types/         # TypeScript type definitions
 │   │   └── App.tsx        # Screen state machine (onboarding → repo-picker → chat)
@@ -82,10 +83,11 @@ Push/
 2. **Pick a repo** — select from your repos, search by name
 3. **Chat** — ask about PRs, recent changes, codebase structure
 4. **Tools** — the agent emits JSON tool blocks, the client executes them against GitHub's API or sandbox, injects results, and re-prompts (up to 3 rounds)
-5. **Sandbox** — start a sandbox to clone the repo into a container, then run commands, edit files, and test changes
-6. **Coder** — describe a coding task and the Orchestrator delegates to the Coder agent, which works autonomously in the sandbox
-7. **Auditor** — every commit goes through the Auditor for a safety verdict (SAFE/UNSAFE) before landing
-8. **Cards** — structured results render as inline cards (terminal output, diff preview, audit verdict, PR details, etc.)
+5. **Scratchpad** — open a shared notepad to consolidate ideas; both you and the agent can read/write
+6. **Sandbox** — start a sandbox to clone the repo into a container, then run commands, edit files, and test changes
+7. **Coder** — describe a coding task and the Orchestrator delegates to the Coder agent, which works autonomously in the sandbox
+8. **Auditor** — every commit goes through the Auditor for a safety verdict (SAFE/UNSAFE) before landing
+9. **Cards** — structured results render as inline cards (terminal output, diff preview, audit verdict, PR details, etc.)
 
 ## Architecture
 
