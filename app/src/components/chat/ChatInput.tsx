@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ArrowUp, Paperclip } from 'lucide-react';
 import { AttachmentPreview } from './AttachmentPreview';
+import { ScratchpadButton } from './ScratchpadButton';
 import { processFile, getTotalAttachmentSize } from '@/lib/file-processing';
 import type { StagedAttachment } from '@/lib/file-processing';
 import type { AttachmentData } from '@/types';
@@ -9,12 +10,14 @@ interface ChatInputProps {
   onSend: (message: string, attachments?: AttachmentData[]) => void;
   disabled?: boolean;
   repoName?: string;
+  onScratchpadToggle?: () => void;
+  scratchpadHasContent?: boolean;
 }
 
 const ACCEPTED_FILES = 'image/*,.js,.ts,.tsx,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.md,.txt,.json,.yaml,.yml,.html,.css,.sql,.sh,.rb,.php,.swift,.kt,.scala,.vue,.svelte,.astro';
 const MAX_PAYLOAD = 400 * 1024; // 400KB total
 
-export function ChatInput({ onSend, disabled, repoName }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scratchpadHasContent }: ChatInputProps) {
   const [value, setValue] = useState('');
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -139,6 +142,15 @@ export function ChatInput({ onSend, disabled, repoName }: ChatInputProps) {
           >
             <Paperclip className="h-4 w-4" />
           </button>
+
+          {/* Scratchpad button */}
+          {onScratchpadToggle && (
+            <ScratchpadButton
+              onClick={onScratchpadToggle}
+              hasContent={scratchpadHasContent ?? false}
+              disabled={disabled}
+            />
+          )}
 
           {/* Hidden file input */}
           <input

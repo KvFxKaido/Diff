@@ -7,11 +7,13 @@ import { useRepos } from '@/hooks/useRepos';
 import { useActiveRepo } from '@/hooks/useActiveRepo';
 import { useMoonshotKey } from '@/hooks/useMoonshotKey';
 import { useSandbox } from '@/hooks/useSandbox';
+import { useScratchpad } from '@/hooks/useScratchpad';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
 import { readFromSandbox } from '@/lib/sandbox-client';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { RepoAndChatSelector } from '@/components/chat/RepoAndChatSelector';
+import { ScratchpadDrawer } from '@/components/chat/ScratchpadDrawer';
 import { OnboardingScreen } from '@/sections/OnboardingScreen';
 import { RepoPicker } from '@/sections/RepoPicker';
 import { FileBrowser } from '@/sections/FileBrowser';
@@ -28,6 +30,7 @@ import './App.css';
 
 function App() {
   const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
+  const scratchpad = useScratchpad();
   const {
     messages,
     sendMessage,
@@ -45,7 +48,11 @@ function App() {
     setEnsureSandbox,
     setAgentsMd,
     handleCardAction,
-  } = useChat(activeRepo?.full_name ?? null);
+  } = useChat(activeRepo?.full_name ?? null, {
+    content: scratchpad.content,
+    replace: scratchpad.replace,
+    append: scratchpad.append,
+  });
   const sandbox = useSandbox();
   const {
     token,
@@ -303,6 +310,17 @@ function App() {
         onSend={sendMessage}
         disabled={isStreaming}
         repoName={activeRepo?.name}
+        onScratchpadToggle={scratchpad.toggle}
+        scratchpadHasContent={scratchpad.hasContent}
+      />
+
+      {/* Scratchpad drawer */}
+      <ScratchpadDrawer
+        isOpen={scratchpad.isOpen}
+        content={scratchpad.content}
+        onContentChange={scratchpad.setContent}
+        onClose={scratchpad.close}
+        onClear={scratchpad.clear}
       />
 
       {/* Toast notifications */}

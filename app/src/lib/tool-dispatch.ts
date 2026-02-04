@@ -10,6 +10,7 @@
 import type { ToolExecutionResult } from '@/types';
 import { detectToolCall, executeToolCall, type ToolCall } from './github-tools';
 import { detectSandboxToolCall, executeSandboxToolCall, type SandboxToolCall } from './sandbox-tools';
+import { detectScratchpadToolCall, type ScratchpadToolCall } from './scratchpad-tools';
 
 // ---------------------------------------------------------------------------
 // Shared: brace-counting JSON extractor (handles nested objects)
@@ -74,16 +75,21 @@ export function extractBareToolJsonObjects(text: string): any[] {
 export type AnyToolCall =
   | { source: 'github'; call: ToolCall }
   | { source: 'sandbox'; call: SandboxToolCall }
-  | { source: 'delegate'; call: { tool: 'delegate_coder'; args: { task: string; files?: string[] } } };
+  | { source: 'delegate'; call: { tool: 'delegate_coder'; args: { task: string; files?: string[] } } }
+  | { source: 'scratchpad'; call: ScratchpadToolCall };
 
 /**
- * Scan assistant output for any tool call (GitHub, Sandbox, or delegation).
+ * Scan assistant output for any tool call (GitHub, Sandbox, Scratchpad, or delegation).
  * Returns the first match, or null if no tool call is detected.
  */
 export function detectAnyToolCall(text: string): AnyToolCall | null {
   // Check for delegate_coder first (it's a special dispatch, not a repo tool)
   const delegateMatch = detectDelegateCoder(text);
   if (delegateMatch) return delegateMatch;
+
+  // Check scratchpad tools (set_scratchpad, append_scratchpad)
+  const scratchpadCall = detectScratchpadToolCall(text);
+  if (scratchpadCall) return { source: 'scratchpad', call: scratchpadCall };
 
   // Check sandbox tools (sandbox_ prefix)
   const sandboxCall = detectSandboxToolCall(text);
@@ -98,6 +104,9 @@ export function detectAnyToolCall(text: string): AnyToolCall | null {
 
 /**
  * Execute a detected tool call through the appropriate handler.
+ *
+ * Note: 'scratchpad' and 'delegate' tools are handled at a higher level (useChat),
+ * not here. They're detected here but executed in the chat hook.
  */
 export async function executeAnyToolCall(
   toolCall: AnyToolCall,
@@ -118,6 +127,11 @@ export async function executeAnyToolCall(
       // Delegation is handled at a higher level (useChat), not here.
       // Return a placeholder — useChat intercepts this before it reaches here.
       return { text: '[Tool Error] Delegation must be handled by the chat hook.' };
+
+    case 'scratchpad':
+      // Scratchpad is handled at a higher level (useChat), not here.
+      // Return a placeholder — useChat intercepts this before it reaches here.
+      return { text: '[Tool Error] Scratchpad must be handled by the chat hook.' };
 
     default:
       return { text: '[Tool Error] Unknown tool source.' };

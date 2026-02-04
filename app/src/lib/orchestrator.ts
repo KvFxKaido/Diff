@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@/types';
 import { TOOL_PROTOCOL } from './github-tools';
 import { SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
+import { SCRATCHPAD_TOOL_PROTOCOL, buildScratchpadContext } from './scratchpad-tools';
 import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 
 // ---------------------------------------------------------------------------
@@ -62,14 +63,21 @@ function toLLMMessages(
   workspaceContext?: string,
   hasSandbox?: boolean,
   systemPromptOverride?: string,
+  scratchpadContent?: string,
 ): LLMMessage[] {
-  // Build system prompt: base + workspace context + tool protocol + optional sandbox tools
+  // Build system prompt: base + workspace context + tool protocol + optional sandbox tools + scratchpad
   let systemContent = systemPromptOverride || ORCHESTRATOR_SYSTEM_PROMPT;
   if (workspaceContext) {
     systemContent += '\n\n' + workspaceContext + '\n' + TOOL_PROTOCOL;
     if (hasSandbox) {
       systemContent += '\n' + SANDBOX_TOOL_PROTOCOL;
     }
+  }
+
+  // Always include scratchpad context and tools (even if empty)
+  systemContent += '\n' + SCRATCHPAD_TOOL_PROTOCOL;
+  if (scratchpadContent !== undefined) {
+    systemContent += '\n\n' + buildScratchpadContext(scratchpadContent);
   }
 
   const llmMessages: LLMMessage[] = [
@@ -199,6 +207,7 @@ export async function streamMoonshotChat(
   hasSandbox?: boolean,
   modelOverride?: string,
   systemPromptOverride?: string,
+  scratchpadContent?: string,
 ): Promise<void> {
   const apiKey = getMoonshotKey();
   if (!apiKey) {
@@ -241,7 +250,7 @@ export async function streamMoonshotChat(
       },
       body: JSON.stringify({
         model,
-        messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride),
+        messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent),
         stream: true,
       }),
       signal: controller.signal,
@@ -379,6 +388,7 @@ export async function streamChat(
   onThinkingToken?: (token: string | null) => void,
   workspaceContext?: string,
   hasSandbox?: boolean,
+  scratchpadContent?: string,
 ): Promise<void> {
   // Demo mode: no API key in dev → show welcome message
   if (import.meta.env.DEV && !getMoonshotKey()) {
@@ -391,5 +401,5 @@ export async function streamChat(
     return;
   }
 
-  return streamMoonshotChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox);
+  return streamMoonshotChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent);
 }

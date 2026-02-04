@@ -6,6 +6,7 @@ import type { AnyToolCall } from '@/lib/tool-dispatch';
 import { runCoderAgent } from '@/lib/coder-agent';
 import { execInSandbox } from '@/lib/sandbox-client';
 import { executeToolCall } from '@/lib/github-tools';
+import { executeScratchpadToolCall } from '@/lib/scratchpad-tools';
 
 const CONVERSATIONS_KEY = 'diff_conversations';
 const ACTIVE_CHAT_KEY = 'diff_active_chat';
@@ -136,12 +137,20 @@ function getToolStatusLabel(toolCall: AnyToolCall): string {
     }
     case 'delegate':
       return 'Delegating to Coder...';
+    case 'scratchpad':
+      return 'Updating scratchpad...';
     default:
       return 'Processing...';
   }
 }
 
-export function useChat(activeRepoFullName: string | null) {
+export interface ScratchpadHandlers {
+  content: string;
+  replace: (text: string) => void;
+  append: (text: string) => void;
+}
+
+export function useChat(activeRepoFullName: string | null, scratchpad?: ScratchpadHandlers) {
   const [conversations, setConversations] = useState<Record<string, Conversation>>(loadConversations);
   const [activeChatId, setActiveChatId] = useState<string>(() => loadActiveChatId(conversations));
   const [isStreaming, setIsStreaming] = useState(false);
@@ -154,6 +163,10 @@ export function useChat(activeRepoFullName: string | null) {
   // Keep activeRepoFullName in a ref so callbacks always see the latest value
   const repoRef = useRef(activeRepoFullName);
   repoRef.current = activeRepoFullName;
+
+  // Keep scratchpad handlers in a ref so callbacks always see the latest
+  const scratchpadRef = useRef(scratchpad);
+  scratchpadRef.current = scratchpad;
 
   // Derived state
   const messages = conversations[activeChatId]?.messages || [];
@@ -452,6 +465,7 @@ export function useChat(activeRepoFullName: string | null) {
               },
               workspaceContextRef.current || undefined,
               hasSandboxThisRound,
+              scratchpadRef.current?.content,
             );
           });
 
@@ -539,7 +553,21 @@ export function useChat(activeRepoFullName: string | null) {
             }
           }
 
-          if (toolCall.source === 'delegate') {
+          if (toolCall.source === 'scratchpad') {
+            // Handle scratchpad tools
+            const sp = scratchpadRef.current;
+            if (!sp) {
+              toolExecResult = { text: '[Tool Error] Scratchpad not available.' };
+            } else {
+              const result = executeScratchpadToolCall(
+                toolCall.call,
+                sp.content,
+                sp.replace,
+                sp.append,
+              );
+              toolExecResult = { text: result };
+            }
+          } else if (toolCall.source === 'delegate') {
             // Handle Coder delegation (Phase 3b)
             const currentSandboxId = sandboxIdRef.current;
             if (!currentSandboxId) {
