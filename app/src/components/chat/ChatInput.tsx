@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { ArrowUp, Paperclip } from 'lucide-react';
 import { AttachmentPreview } from './AttachmentPreview';
 import { ScratchpadButton } from './ScratchpadButton';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { processFile, getTotalAttachmentSize } from '@/lib/file-processing';
 import type { StagedAttachment } from '@/lib/file-processing';
 import type { AttachmentData } from '@/types';
@@ -22,6 +23,7 @@ export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scra
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   const hasAttachments = stagedAttachments.length > 0;
   const readyAttachments = stagedAttachments.filter((a) => a.status === 'ready');
@@ -70,16 +72,19 @@ export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scra
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      // On mobile (touch devices), Enter creates a new line; use the send button to submit
-      // On desktop, Enter sends the message (Shift+Enter for new line)
-      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      // Only use mobile keyboard behavior (Enter = newline) if BOTH:
+      // 1. Narrow viewport (mobile layout) AND
+      // 2. Touch capability (actual touch device)
+      // This prevents desktop users with narrow windows from losing Enter-to-send
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isMobileDevice = isMobile && hasTouch;
 
-      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobileDevice) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, isMobile],
   );
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
