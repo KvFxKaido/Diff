@@ -70,36 +70,118 @@ const SANDBOX_BASE = '/api/sandbox';
 const DEFAULT_TIMEOUT_MS = 30_000; // 30s for most operations
 const EXEC_TIMEOUT_MS = 120_000;   // 120s for command execution
 
+// --- Retry configuration ---
+
+const MAX_RETRIES = 4;
+const BASE_DELAY_MS = 2000; // 2s, 4s, 8s, 16s exponential backoff
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Determines if an error is retryable (network issues, timeouts, 5xx errors).
+ * Non-retryable: 4xx client errors, configuration errors.
+ */
+function isRetryableError(err: unknown, statusCode?: number): boolean {
+  // Timeout errors are retryable
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return true;
+  }
+
+  // Network errors (fetch failed entirely) are retryable
+  if (err instanceof TypeError && err.message.includes('fetch')) {
+    return true;
+  }
+
+  // 5xx server errors are retryable
+  if (statusCode && statusCode >= 500) {
+    return true;
+  }
+
+  // 4xx client errors and other errors are not retryable
+  return false;
+}
+
+/**
+ * Wraps a fetch call with exponential backoff retry logic.
+ * Retries up to MAX_RETRIES times with delays: 2s, 4s, 8s, 16s.
+ */
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  endpoint: string,
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+
+      // Check for statusCode property (attached in sandboxFetch) or extract from message
+      const errWithStatus = err as Error & { statusCode?: number };
+      let statusCode = errWithStatus.statusCode;
+      if (!statusCode) {
+        const statusMatch = lastError.message.match(/\((\d{3})\)/);
+        statusCode = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
+      }
+
+      // Don't retry non-retryable errors
+      if (!isRetryableError(err, statusCode)) {
+        throw lastError;
+      }
+
+      // Don't retry after the last attempt
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+
+      // Exponential backoff: 2s, 4s, 8s, 16s
+      const delayMs = BASE_DELAY_MS * Math.pow(2, attempt);
+      console.log(`[sandbox-client] ${endpoint} attempt ${attempt + 1} failed, retrying in ${delayMs}ms...`);
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`Sandbox ${endpoint} failed after ${MAX_RETRIES + 1} attempts: ${lastError?.message}`);
+}
+
 async function sandboxFetch<T>(
   endpoint: string,
   body: Record<string, unknown>,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return withRetry(async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const res = await fetch(`${SANDBOX_BASE}/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    try {
+      const res = await fetch(`${SANDBOX_BASE}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw formatSandboxError(res.status, text);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        // Attach status code for retry logic
+        const error = formatSandboxError(res.status, text);
+        (error as Error & { statusCode?: number }).statusCode = res.status;
+        throw error;
+      }
+
+      return res.json();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error(`Sandbox ${endpoint} timed out after ${Math.round(timeoutMs / 1000)}s — the server may be slow or unreachable.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    return res.json();
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error(`Sandbox ${endpoint} timed out after ${Math.round(timeoutMs / 1000)}s — the server may be slow or unreachable.`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+  }, endpoint);
 }
 
 // --- Public API ---
