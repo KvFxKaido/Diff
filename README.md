@@ -101,4 +101,4 @@ AI runs through a single provider: Kimi For Coding (`api.kimi.com`). The API key
 
 ## License
 
-This project is private and not currently licensed for redistribution.
+This project is licensed under the [MIT License](LICENSE).
