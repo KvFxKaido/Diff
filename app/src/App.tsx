@@ -3,6 +3,7 @@ import { Settings, Trash2, FolderOpen } from 'lucide-react';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
 import { useGitHubAuth } from '@/hooks/useGitHubAuth';
+import { useGitHubAppAuth } from '@/hooks/useGitHubAppAuth';
 import { useRepos } from '@/hooks/useRepos';
 import { useActiveRepo } from '@/hooks/useActiveRepo';
 import { useMoonshotKey } from '@/hooks/useMoonshotKey';
@@ -54,14 +55,32 @@ function App() {
     append: scratchpad.append,
   });
   const sandbox = useSandbox();
+  // PAT-based auth (fallback)
   const {
-    token,
+    token: patToken,
     setTokenManually,
-    logout,
-    loading: authLoading,
-    error: authError,
-    validatedUser,
+    logout: patLogout,
+    loading: patLoading,
+    error: patError,
+    validatedUser: patUser,
   } = useGitHubAuth();
+
+  // GitHub App auth (primary)
+  const {
+    token: appToken,
+    install: installApp,
+    disconnect: appDisconnect,
+    loading: appLoading,
+    error: appError,
+    validatedUser: appUser,
+    isAppAuth,
+  } = useGitHubAppAuth();
+
+  // Prefer GitHub App token over PAT
+  const token = appToken || patToken;
+  const authLoading = appLoading || patLoading;
+  const authError = appError || patError;
+  const validatedUser = appUser || patUser;
   const { repos, loading: reposLoading, sync: syncRepos } = useRepos();
   const { key: kimiKey, setKey: setKimiKey, clearKey: clearKimiKey, hasKey: hasKimiKey } = useMoonshotKey();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -109,13 +128,14 @@ function App() {
     [setActiveRepo],
   );
 
-  // Disconnect: clear everything
+  // Disconnect: clear everything (both auth methods)
   const handleDisconnect = useCallback(() => {
-    logout();
+    appDisconnect();
+    patLogout();
     clearActiveRepo();
     deleteAllChats();
     setIsDemo(false);
-  }, [logout, clearActiveRepo, deleteAllChats]);
+  }, [appDisconnect, patLogout, clearActiveRepo, deleteAllChats]);
 
   // --- AGENTS.md: read from sandbox when ready ---
 
@@ -194,9 +214,11 @@ function App() {
       <OnboardingScreen
         onConnect={handleConnect}
         onDemo={handleDemo}
+        onInstallApp={installApp}
         loading={authLoading}
         error={authError}
         validatedUser={validatedUser}
+        isAppAuth={isAppAuth}
       />
     );
   }
@@ -369,13 +391,21 @@ function App() {
                   {!isDemo && (
                     <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
                       <p className="text-sm text-[#a1a1aa] font-mono">
-                        {token.startsWith('ghp_') ? 'ghp_••••••••' : 'Token saved'}
+                        {isAppAuth ? (
+                          <span className="text-emerald-400">GitHub App</span>
+                        ) : token.startsWith('ghp_') ? (
+                          'ghp_••••••••'
+                        ) : (
+                          'Token saved'
+                        )}
                       </p>
+                      {isAppAuth && (
+                        <p className="text-xs text-[#52525b] mt-1">
+                          Auto-refreshing token
+                        </p>
+                      )}
                     </div>
                   )}
-                  {/* Security note: PAT is stored in localStorage (accessible to same-origin JS). */}
-                  {/* Mitigated by: no innerHTML/dangerouslySetInnerHTML usage, strict CSP in production. */}
-                  {/* Future: consider HttpOnly cookie via backend session. */}
                   <Button
                     variant="ghost"
                     size="sm"

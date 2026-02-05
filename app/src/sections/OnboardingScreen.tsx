@@ -1,23 +1,28 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Github, Key } from 'lucide-react';
 import type { GitHubUser } from '@/types';
 
 interface OnboardingScreenProps {
   onConnect: (pat: string) => Promise<boolean>;
   onDemo: () => void;
+  onInstallApp: () => void;
   loading: boolean;
   error: string | null;
   validatedUser: GitHubUser | null;
+  isAppAuth?: boolean;
 }
 
 export function OnboardingScreen({
   onConnect,
   onDemo,
+  onInstallApp,
   loading,
   error,
   validatedUser,
+  isAppAuth,
 }: OnboardingScreenProps) {
   const [pat, setPat] = useState('');
+  const [showPatInput, setShowPatInput] = useState(false);
 
   const handleConnect = async () => {
     if (!pat.trim() || loading) return;
@@ -54,17 +59,21 @@ export function OnboardingScreen({
           </p>
         </div>
 
-        {/* PAT input */}
+        {/* Auth section */}
         <div className="space-y-3">
           {validatedUser && !error ? (
             <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
               <div className="h-2 w-2 rounded-full bg-emerald-500" />
               <span className="text-sm text-emerald-400">
                 Connected as <span className="font-medium">{validatedUser.login}</span>
+                {isAppAuth && (
+                  <span className="ml-1 text-emerald-500/60">(GitHub App)</span>
+                )}
               </span>
             </div>
-          ) : (
+          ) : showPatInput ? (
             <>
+              {/* PAT input mode */}
               <input
                 type="password"
                 placeholder="ghp_xxxxxxxxxxxx"
@@ -87,15 +96,16 @@ export function OnboardingScreen({
                     Validating…
                   </>
                 ) : (
-                  'Connect GitHub'
+                  'Connect with PAT'
                 )}
               </button>
 
-              {error && (
-                <p className="text-xs text-red-400 text-center leading-relaxed">
-                  {error}
-                </p>
-              )}
+              <button
+                onClick={() => setShowPatInput(false)}
+                className="w-full text-xs text-[#52525b] hover:text-[#71717a] transition-colors"
+              >
+                ← Back to GitHub App
+              </button>
 
               <p className="text-xs text-[#52525b] text-center leading-relaxed">
                 Personal access token with{' '}
@@ -103,6 +113,48 @@ export function OnboardingScreen({
                 <br />
                 Stored locally, never sent to our servers.
               </p>
+            </>
+          ) : (
+            <>
+              {/* GitHub App install (primary) */}
+              <button
+                onClick={onInstallApp}
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0070f3] px-4 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-[#0060d3] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Connecting…
+                  </>
+                ) : (
+                  <>
+                    <Github className="h-4 w-4" />
+                    Install GitHub App
+                  </>
+                )}
+              </button>
+
+              <p className="text-xs text-[#52525b] text-center leading-relaxed">
+                One-click install. Select which repos to grant access.
+                <br />
+                <span className="text-emerald-500/80">Recommended</span> — more secure than PAT.
+              </p>
+
+              {error && (
+                <p className="text-xs text-red-400 text-center leading-relaxed">
+                  {error}
+                </p>
+              )}
+
+              {/* PAT fallback */}
+              <button
+                onClick={() => setShowPatInput(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#1a1a1a] bg-transparent px-4 py-3 text-sm text-[#71717a] transition-all duration-200 hover:border-[#27272a] hover:text-[#a1a1aa] active:scale-[0.98]"
+              >
+                <Key className="h-4 w-4" />
+                Use Personal Access Token
+              </button>
             </>
           )}
         </div>
