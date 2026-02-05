@@ -1,7 +1,8 @@
-import { useRef, useEffect, useMemo } from 'react';
+import { useRef, useEffect, useMemo, useState } from 'react';
 import type { ChatMessage, AgentStatus, ActiveRepo, CardAction } from '@/types';
 import { MessageBubble } from './MessageBubble';
 import { AgentStatusBar } from './AgentStatusBar';
+import { ArrowDown } from 'lucide-react';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
@@ -79,20 +80,57 @@ function EmptyState({
 export function ChatContainer({ messages, agentStatus, activeRepo, onSuggestion, onCardAction }: ChatContainerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const lastMessageRef = useRef<ChatMessage | null>(null);
+
+  // Track scroll position and show/hide scroll button
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      setShowScrollButton(distanceFromBottom > 300);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    handleScroll(); // Check initial position
+
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive or content streams in
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Only auto-scroll if user is near the bottom (within 150px)
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+    const previousLastMessage = lastMessageRef.current;
 
-    if (isNearBottom) {
+    // Check if this is a new message (not just content update)
+    const isNewMessage = lastMessage && 
+      (!previousLastMessage || lastMessage.id !== previousLastMessage.id);
+
+    // Always scroll to bottom when user sends a new message
+    if (isNewMessage && lastMessage.role === 'user') {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      // For assistant messages (streaming), only scroll if user is near bottom
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const isNearBottom = distanceFromBottom < 150;
+
+      if (isNearBottom) {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
     }
+
+    // Update ref to track the last message
+    lastMessageRef.current = lastMessage;
   }, [messages, messages.length > 0 ? messages[messages.length - 1]?.content : '']);
+
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   if (messages.length === 0) {
     return (
@@ -105,7 +143,7 @@ export function ChatContainer({ messages, agentStatus, activeRepo, onSuggestion,
   return (
     <div
       ref={containerRef}
-      className="flex flex-1 flex-col overflow-y-auto overscroll-contain"
+      className="flex flex-1 flex-col overflow-y-auto overscroll-contain relative"
     >
       <div className="flex-1" />
       <div className="py-4 space-y-1">
@@ -115,6 +153,27 @@ export function ChatContainer({ messages, agentStatus, activeRepo, onSuggestion,
         <AgentStatusBar status={agentStatus} />
       </div>
       <div ref={bottomRef} />
+      
+      {/* Scroll to bottom button */}
+      <button
+        onClick={scrollToBottom}
+        className={`
+          absolute right-4 bottom-24
+          flex items-center justify-center
+          w-10 h-10
+          rounded-full
+          bg-[#111] border border-[#1a1a1a]
+          text-[#a1a1aa]
+          shadow-lg
+          transition-all duration-200 ease-in-out
+          hover:border-[#27272a] hover:text-[#d4d4d8]
+          active:scale-95
+          ${showScrollButton ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-2 pointer-events-none'}
+        `}
+        aria-label="Scroll to bottom"
+      >
+        <ArrowDown size={18} />
+      </button>
     </div>
   );
 }
