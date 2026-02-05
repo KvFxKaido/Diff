@@ -84,8 +84,13 @@ function sleep(ms: number): Promise<void> {
  * Non-retryable: 4xx client errors, configuration errors.
  */
 function isRetryableError(err: unknown, statusCode?: number): boolean {
-  // Timeout errors are retryable
+  // Timeout errors are retryable (original AbortError)
   if (err instanceof DOMException && err.name === 'AbortError') {
+    return true;
+  }
+
+  // Timeout errors converted to generic Error (check message pattern)
+  if (err instanceof Error && err.message.includes('timed out')) {
     return true;
   }
 
