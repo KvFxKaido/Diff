@@ -28,6 +28,8 @@ const ACCESS_DENIED_MESSAGE =
   '[Tool Error] Access denied — can only query the active repo (owner/repo)';
 
 const GITHUB_TIMEOUT_MS = 15_000; // 15s timeout for GitHub API calls
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000; // 1s initial delay for exponential backoff
 
 // --- Auth helper (mirrors useGitHub / useRepos pattern) ---
 
@@ -43,22 +45,88 @@ function getGitHubHeaders(): Record<string, string> {
   return headers;
 }
 
-// --- Fetch with timeout ---
+// --- Fetch with timeout and retry ---
+
+function isRetryableError(error: unknown, status?: number): boolean {
+  // Network errors, timeouts, and 5xx server errors are retryable
+  if (status !== undefined) {
+    // 429 rate limit is retryable
+    if (status === 429) return true;
+    // 5xx server errors are retryable
+    if (status >= 500 && status < 600) return true;
+    // 4xx client errors are NOT retryable (except 429 handled above)
+    return false;
+  }
+  // Network errors and timeouts are retryable
+  return true;
+}
+
+function getRetryDelay(response: Response | undefined, attempt: number): number {
+  // Check for Retry-After header (used by GitHub for rate limiting)
+  if (response && response.status === 429) {
+    const retryAfter = response.headers.get('Retry-After');
+    if (retryAfter) {
+      const delay = parseInt(retryAfter, 10);
+      if (!isNaN(delay)) {
+        console.log(`[Push] Rate limited. Waiting ${delay + 1}s (Retry-After header + 1s buffer)`);
+        return (delay + 1) * 1000; // Add 1s buffer
+      }
+    }
+  }
+  // Exponential backoff: 1s, 2s, 4s
+  return BASE_DELAY_MS * Math.pow(2, attempt - 1);
+}
+
+async function fetchWithRetry(url: string, options?: RequestInit): Promise<Response> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GITHUB_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+
+      // Check if we should retry based on status code
+      if (!response.ok && isRetryableError(null, response.status)) {
+        if (attempt < MAX_RETRIES) {
+          const delay = getRetryDelay(response, attempt + 1);
+          console.log(`[Push] GitHub API retry ${attempt + 1}/${MAX_RETRIES}: ${response.status} ${response.statusText}, waiting ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+      }
+
+      return response;
+    } catch (err) {
+      const isTimeout = err instanceof DOMException && err.name === 'AbortError';
+      const errorMsg = isTimeout
+        ? `GitHub API timed out after ${GITHUB_TIMEOUT_MS / 1000}s — check your connection.`
+        : err instanceof Error ? err.message : String(err);
+
+      lastError = new Error(errorMsg);
+
+      // Check if we should retry
+      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+        console.log(`[Push] GitHub API retry ${attempt + 1}/${MAX_RETRIES}: ${errorMsg}, waiting ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // Don't retry - rethrow
+      throw lastError;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // All retries exhausted
+  throw lastError || new Error(`GitHub API failed after ${MAX_RETRIES} retries`);
+}
 
 async function githubFetch(url: string, options?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GITHUB_TIMEOUT_MS);
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error(`GitHub API timed out after ${GITHUB_TIMEOUT_MS / 1000}s — check your connection.`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchWithRetry(url, options);
 }
 
 // --- Detection helpers ---
