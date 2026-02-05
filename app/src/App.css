@@ -51,7 +51,7 @@ button:focus-visible {
   outline: none;
 }
 
-/* Safe area insets for notched devices */
+/* Safe area insets for notched devices and home indicator */
 @supports (padding-top: env(safe-area-inset-top)) {
   .safe-area-top {
     padding-top: env(safe-area-inset-top);
@@ -59,5 +59,19 @@ button:focus-visible {
 
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Handle virtual keyboard on mobile — ensure bottom sheets don't get hidden */
+@supports (padding-bottom: env(keyboard-inset-height)) {
+  [data-state="open"][data-side="bottom"] {
+    padding-bottom: max(env(safe-area-inset-bottom), env(keyboard-inset-height, 0px));
+  }
+}
+
+/* Fallback: when keyboard is visible, ensure inputs stay visible */
+@media (max-height: 500px) {
+  [data-side="bottom"] {
+    max-height: 95dvh !important;
   }
 }
