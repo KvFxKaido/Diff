@@ -406,6 +406,25 @@ function App() {
                       )}
                     </div>
                   )}
+                  {/* Upgrade to GitHub App (shown when using PAT) */}
+                  {!isDemo && !isAppAuth && patToken && (
+                    <div className="space-y-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          installApp();
+                          setSettingsOpen(false);
+                        }}
+                        className="text-[#0070f3] hover:text-[#0060d3] w-full justify-start"
+                      >
+                        ⬆️ Upgrade to GitHub App
+                      </Button>
+                      <p className="text-xs text-[#52525b]">
+                        More secure — scoped access, auto-refreshing tokens.
+                      </p>
+                    </div>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
