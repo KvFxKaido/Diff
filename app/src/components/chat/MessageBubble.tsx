@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from 'react';
-import { ChevronRight, GitPullRequest, GitBranch, GitCommit, FileCode, Terminal, FileDiff, PenTool, ShieldCheck, Activity, FolderOpen, FileText } from 'lucide-react';
+import { memo, useMemo, useState, useCallback } from 'react';
+import { ChevronRight, GitPullRequest, GitBranch, GitCommit, FileCode, Terminal, FileDiff, PenTool, ShieldCheck, Activity, FolderOpen, FileText, Copy, Check } from 'lucide-react';
 import type { ChatMessage, CardAction, AttachmentData } from '@/types';
 import { detectAnyToolCall } from '@/lib/tool-dispatch';
 import { CardRenderer } from '@/components/cards/CardRenderer';
@@ -279,6 +279,44 @@ function AttachmentBadge({ attachment }: { attachment: AttachmentData }) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [text]);
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="p-1.5 rounded-md text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#1a1a1a] transition-colors duration-150"
+      title={copied ? 'Copied!' : 'Copy to clipboard'}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-[#22c55e]" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
 export const MessageBubble = memo(function MessageBubble({
   message,
   onCardAction,
@@ -308,7 +346,10 @@ export const MessageBubble = memo(function MessageBubble({
     const hasAttachments = message.attachments && message.attachments.length > 0;
 
     return (
-      <div className="flex justify-end px-4 py-1">
+      <div className="flex justify-end px-4 py-1 group/user">
+        <div className="opacity-0 group-hover/user:opacity-100 transition-opacity duration-150 flex items-start pt-2 mr-1">
+          <CopyButton text={message.content} />
+        </div>
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[#1a1a2e] px-4 py-2.5">
           {/* Attachments */}
           {hasAttachments && (
@@ -330,7 +371,7 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   return (
-    <div className="flex items-start gap-2.5 px-4 py-1">
+    <div className="flex items-start gap-2.5 px-4 py-1 group/assistant">
       <div className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0d0d0d] border border-[#1a1a1a]">
         <svg
           width="10"
@@ -364,6 +405,11 @@ export const MessageBubble = memo(function MessageBubble({
             <span className="inline-block w-[6px] h-[16px] bg-[#0070f3] ml-0.5 align-text-bottom animate-blink" />
           )}
         </div>
+        {hasContent && !isStreaming && (
+          <div className="opacity-0 group-hover/assistant:opacity-100 transition-opacity duration-150 mt-1">
+            <CopyButton text={message.content} />
+          </div>
+        )}
         {message.cards && message.cards.length > 0 && (
           <div className="mt-1">
             {message.cards.map((card, i) => (
