@@ -340,18 +340,33 @@ function createChunkedEmitter(
 }
 
 // ---------------------------------------------------------------------------
-// Kimi For Coding streaming (SSE — OpenAI-compatible)
+// Shared: generic SSE streaming with timeouts
 // ---------------------------------------------------------------------------
 
-// --- Usage data from streaming responses ---
-
-export interface StreamUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
+interface StreamProviderConfig {
+  name: string;
+  apiUrl: string;
+  apiKey: string;
+  model: string;
+  connectTimeoutMs: number;
+  idleTimeoutMs: number;
+  stallTimeoutMs?: number;
+  totalTimeoutMs?: number;
+  errorMessages: {
+    keyMissing: string;
+    connect: (seconds: number) => string;
+    idle: (seconds: number) => string;
+    stall?: (seconds: number) => string;
+    total?: (seconds: number) => string;
+    network: string;
+  };
+  parseError: (parsed: any, fallback: string) => string;
+  checkFinishReason: (choice: any) => boolean;
+  shouldResetStallOnReasoning?: boolean;
 }
 
-export async function streamMoonshotChat(
+async function streamSSEChat(
+  config: StreamProviderConfig,
   messages: ChatMessage[],
   onToken: (token: string) => void,
   onDone: (usage?: StreamUsage) => void,
@@ -359,253 +374,49 @@ export async function streamMoonshotChat(
   onThinkingToken?: (token: string | null) => void,
   workspaceContext?: string,
   hasSandbox?: boolean,
-  modelOverride?: string,
   systemPromptOverride?: string,
   scratchpadContent?: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const apiKey = getMoonshotKey();
-  if (!apiKey) {
-    onError(new Error('Moonshot API key not configured'));
-    return;
-  }
-
-  const model = modelOverride || KIMI_MODEL;
-
-  const CONNECT_TIMEOUT_MS = 30_000; // 30s to get initial response headers
-  const IDLE_TIMEOUT_MS = 60_000;    // 60s max silence during streaming
+  const {
+    name,
+    apiUrl,
+    apiKey,
+    model,
+    connectTimeoutMs,
+    idleTimeoutMs,
+    stallTimeoutMs,
+    totalTimeoutMs,
+    errorMessages,
+    parseError,
+    checkFinishReason,
+    shouldResetStallOnReasoning = false,
+  } = config;
 
   const controller = new AbortController();
-  let abortReason: 'connect' | 'idle' | 'user' | null = null;
+  const abortReasons = ['connect', 'idle', 'user'] as const;
+  type AbortReason = typeof abortReasons[number] | 'stall' | 'total' | null;
+  let abortReason: AbortReason = null;
 
-  // Wire up external abort signal
   const onExternalAbort = () => {
     abortReason = 'user';
     controller.abort();
   };
   signal?.addEventListener('abort', onExternalAbort);
 
-  // Connection timeout — abort if server doesn't respond
+  // Timers
   let connectTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
     abortReason = 'connect';
     controller.abort();
-  }, CONNECT_TIMEOUT_MS);
+  }, connectTimeoutMs);
 
-  // Idle timer — reset every time we receive data
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  const resetIdleTimer = () => {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      abortReason = 'idle';
+  let totalTimer: ReturnType<typeof setTimeout> | undefined;
+  if (totalTimeoutMs) {
+    totalTimer = setTimeout(() => {
+      abortReason = 'total';
       controller.abort();
-    }, IDLE_TIMEOUT_MS);
-  };
-
-  try {
-    console.log(`[Push] POST ${KIMI_API_URL} (model: ${model})`);
-
-    const response = await fetch(KIMI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent),
-        stream: true,
-      }),
-      signal: controller.signal,
-    });
-
-    // Connection established — clear connect timeout, start idle timeout
-    clearTimeout(connectTimer);
-    connectTimer = undefined;
-    resetIdleTimer();
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      let detail = '';
-      try {
-        const parsed = JSON.parse(body);
-        detail = parsed.error?.message || parsed.error || body.slice(0, 200);
-      } catch {
-        detail = body ? body.slice(0, 200) : 'empty body';
-      }
-      console.error(`[Push] Moonshot error: ${response.status}`, detail);
-      throw new Error(`Moonshot ${response.status}: ${detail}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    // SSE format: lines starting with "data:" followed by JSON
-    // Kimi sends "data:{...}" (no space); OpenAI sends "data: {...}" (with space)
-    // Stream ends with "data: [DONE]" or "data:[DONE]"
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    // Smart chunking: batch tokens for smoother mobile UI
-    const chunker = createChunkedEmitter(onToken);
-    const parser = createThinkTokenParser((token) => chunker.push(token), onThinkingToken);
-
-    // Track usage from response
-    let usage: StreamUsage | undefined;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      resetIdleTimer(); // got data — reset idle timeout
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        // Check for stream termination: "data: [DONE]" or "data:[DONE]"
-        if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') {
-          parser.flush();
-          chunker.flush();
-          onDone(usage);
-          return;
-        }
-
-        // SSE data lines: "data: {...}" or "data:{...}" (with or without space)
-        if (!trimmed.startsWith('data:')) continue;
-        const jsonStr = trimmed[5] === ' ' ? trimmed.slice(6) : trimmed.slice(5);
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-
-          // Extract usage data if present (usually in final chunk)
-          if (parsed.usage) {
-            usage = {
-              inputTokens: parsed.usage.prompt_tokens || 0,
-              outputTokens: parsed.usage.completion_tokens || 0,
-              totalTokens: parsed.usage.total_tokens || 0,
-            };
-          }
-
-          const choice = parsed.choices?.[0];
-          if (!choice) continue;
-
-          // Process tokens BEFORE checking finish_reason — Kimi may
-          // bundle the last content token in the same SSE event as
-          // finish_reason:"stop", so we must capture it first.
-
-          // Kimi For Coding: reasoning tokens arrive via delta.reasoning_content
-          const reasoningToken = choice.delta?.reasoning_content;
-          if (reasoningToken) {
-            onThinkingToken?.(reasoningToken);
-          }
-
-          // Content tokens arrive via delta.content
-          const token = choice.delta?.content;
-          if (token) {
-            parser.push(token);
-          }
-
-          // Check finish_reason (after processing any final tokens in this chunk)
-          if (choice.finish_reason === 'stop' || choice.finish_reason === 'end_turn' || choice.finish_reason === 'tool_calls') {
-            parser.flush();
-            chunker.flush();
-            onDone(usage);
-            return;
-          }
-        } catch {
-          // Skip malformed SSE data
-        }
-      }
-    }
-
-    // If we reach here without [DONE], still flush and finish
-    parser.flush();
-    chunker.flush();
-    onDone(usage);
-  } catch (err) {
-    // Cleanup timers on error path
-    clearTimeout(connectTimer);
-    clearTimeout(idleTimer);
-
-    // Handle abort errors with specific messages
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      if (abortReason === 'user') {
-        // User-initiated abort - do not report as error
-        onDone();
-        return;
-      }
-      const timeoutMsg = abortReason === 'connect'
-        ? `Kimi API didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be down.`
-        : `Kimi API stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
-      console.error(`[Push] Moonshot timeout (${abortReason}):`, timeoutMsg);
-      onError(new Error(timeoutMsg));
-      return;
-    }
-
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Push] Moonshot chat error:`, msg);
-    if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-      onError(new Error(
-        `Cannot reach Moonshot — network error. Check your connection.`
-      ));
-    } else {
-      onError(err instanceof Error ? err : new Error(msg));
-    }
-  } finally {
-    clearTimeout(connectTimer);
-    clearTimeout(idleTimer);
-    signal?.removeEventListener('abort', onExternalAbort);
+    }, totalTimeoutMs);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Ollama Cloud streaming (SSE — OpenAI-compatible)
-// ---------------------------------------------------------------------------
-
-export async function streamOllamaChat(
-  messages: ChatMessage[],
-  onToken: (token: string) => void,
-  onDone: (usage?: StreamUsage) => void,
-  onError: (error: Error) => void,
-  onThinkingToken?: (token: string | null) => void,
-  workspaceContext?: string,
-  hasSandbox?: boolean,
-  modelOverride?: string,
-  systemPromptOverride?: string,
-  scratchpadContent?: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const apiKey = getOllamaKey();
-  if (!apiKey) {
-    onError(new Error('Ollama Cloud API key not configured'));
-    return;
-  }
-
-  const model = modelOverride || getOllamaModelName();
-
-  const CONNECT_TIMEOUT_MS = 30_000;  // 30s to get initial response headers
-  const IDLE_TIMEOUT_MS = 45_000;     // 45s max silence (no bytes at all)
-  const STALL_TIMEOUT_MS = 30_000;    // 30s max receiving bytes but no content tokens
-  const TOTAL_TIMEOUT_MS = 180_000;   // 3 min absolute ceiling for entire response
-
-  const controller = new AbortController();
-  let abortReason: 'connect' | 'idle' | 'stall' | 'total' | null = null;
-
-  let connectTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
-    abortReason = 'connect';
-    controller.abort();
-  }, CONNECT_TIMEOUT_MS);
-
-  // Absolute timeout — prevents infinite hangs regardless of keep-alives
-  let totalTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
-    abortReason = 'total';
-    controller.abort();
-  }, TOTAL_TIMEOUT_MS);
 
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   const resetIdleTimer = () => {
@@ -613,23 +424,23 @@ export async function streamOllamaChat(
     idleTimer = setTimeout(() => {
       abortReason = 'idle';
       controller.abort();
-    }, IDLE_TIMEOUT_MS);
+    }, idleTimeoutMs);
   };
 
-  // Content stall timer — fires when we receive bytes but no actual content tokens
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
   const resetStallTimer = () => {
+    if (!stallTimeoutMs) return;
     clearTimeout(stallTimer);
     stallTimer = setTimeout(() => {
       abortReason = 'stall';
       controller.abort();
-    }, STALL_TIMEOUT_MS);
+    }, stallTimeoutMs);
   };
 
   try {
-    console.log(`[Push] POST ${OLLAMA_API_URL} (model: ${model})`);
+    console.log(`[Push] POST ${apiUrl} (model: ${model})`);
 
-    const response = await fetch(OLLAMA_API_URL, {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -646,229 +457,19 @@ export async function streamOllamaChat(
     clearTimeout(connectTimer);
     connectTimer = undefined;
     resetIdleTimer();
-    resetStallTimer();
+    if (stallTimeoutMs) resetStallTimer();
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       let detail = '';
       try {
         const parsed = JSON.parse(body);
-        detail = parsed.error?.message || parsed.error || body.slice(0, 200);
+        detail = parseError(parsed, body.slice(0, 200));
       } catch {
         detail = body ? body.slice(0, 200) : 'empty body';
       }
-      console.error(`[Push] Ollama Cloud error: ${response.status}`, detail);
-      throw new Error(`Ollama Cloud ${response.status}: ${detail}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    // SSE format: same as OpenAI — "data: {...}" lines, ends with "data: [DONE]"
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const chunker = createChunkedEmitter(onToken);
-    const parser = createThinkTokenParser((token) => chunker.push(token), onThinkingToken);
-
-    let usage: StreamUsage | undefined;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      resetIdleTimer(); // got raw bytes — reset byte-level idle timer
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        if (trimmed === 'data: [DONE]' || trimmed === 'data:[DONE]') {
-          parser.flush();
-          chunker.flush();
-          onDone(usage);
-          return;
-        }
-
-        if (!trimmed.startsWith('data:')) continue;
-        const jsonStr = trimmed[5] === ' ' ? trimmed.slice(6) : trimmed.slice(5);
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-
-          if (parsed.usage) {
-            usage = {
-              inputTokens: parsed.usage.prompt_tokens || 0,
-              outputTokens: parsed.usage.completion_tokens || 0,
-              totalTokens: parsed.usage.total_tokens || 0,
-            };
-          }
-
-          const choice = parsed.choices?.[0];
-          if (!choice) continue;
-
-          // Some Ollama models emit reasoning via delta.reasoning_content
-          const reasoningToken = choice.delta?.reasoning_content;
-          if (reasoningToken) {
-            onThinkingToken?.(reasoningToken);
-            resetStallTimer(); // got actual content — reset stall timer
-          }
-
-          const token = choice.delta?.content;
-          if (token) {
-            parser.push(token);
-            resetStallTimer(); // got actual content — reset stall timer
-          }
-
-          // Treat ANY non-null finish_reason as end-of-stream.
-          // Ollama models may return values other than 'stop' (e.g., 'eos').
-          if (choice.finish_reason != null) {
-            parser.flush();
-            chunker.flush();
-            onDone(usage);
-            return;
-          }
-        } catch {
-          // Skip malformed SSE data
-        }
-      }
-    }
-
-    parser.flush();
-    chunker.flush();
-    onDone(usage);
-  } catch (err) {
-    clearTimeout(connectTimer);
-    clearTimeout(idleTimer);
-    clearTimeout(stallTimer);
-    clearTimeout(totalTimer);
-
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      if (abortReason === 'user') {
-        // User-initiated abort - do not report as error
-        onDone();
-        return;
-      }
-      const reason = String(abortReason);
-      const timeoutMsg = reason === 'connect'
-        ? `Ollama Cloud didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be cold-starting.`
-        : reason === 'stall'
-        ? `Ollama Cloud stream stalled — receiving data but no content for ${STALL_TIMEOUT_MS / 1000}s. The model may be stuck.`
-        : reason === 'total'
-        ? `Ollama Cloud response exceeded ${TOTAL_TIMEOUT_MS / 1000}s total time limit.`
-        : `Ollama Cloud stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
-      console.error(`[Push] Ollama timeout (${reason}):`, timeoutMsg);
-      onError(new Error(timeoutMsg));
-      return;
-    }
-
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Push] Ollama Cloud chat error:`, msg);
-    if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-      onError(new Error(
-        `Cannot reach Ollama Cloud — network error. Check your connection.`
-      ));
-    } else {
-      onError(err instanceof Error ? err : new Error(msg));
-    }
-  } finally {
-    clearTimeout(connectTimer);
-    clearTimeout(idleTimer);
-    clearTimeout(stallTimer);
-    clearTimeout(totalTimer);
-    signal?.removeEventListener('abort', onExternalAbort);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Mistral Vibe streaming (SSE — OpenAI-compatible)
-// ---------------------------------------------------------------------------
-
-export async function streamMistralChat(
-  messages: ChatMessage[],
-  onToken: (token: string) => void,
-  onDone: (usage?: StreamUsage) => void,
-  onError: (error: Error) => void,
-  onThinkingToken?: (token: string | null) => void,
-  workspaceContext?: string,
-  hasSandbox?: boolean,
-  modelOverride?: string,
-  systemPromptOverride?: string,
-  scratchpadContent?: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const apiKey = getMistralKey();
-  if (!apiKey) {
-    onError(new Error('Mistral API key not configured'));
-    return;
-  }
-
-  const model = modelOverride || getMistralModelName();
-
-  const CONNECT_TIMEOUT_MS = 30_000;
-  const IDLE_TIMEOUT_MS = 90_000; // Mistral API is generally fast
-
-  const controller = new AbortController();
-  let abortReason: 'connect' | 'idle' | 'user' | null = null;
-
-  // Wire up external abort signal
-  const onExternalAbort = () => {
-    abortReason = 'user';
-    controller.abort();
-  };
-  signal?.addEventListener('abort', onExternalAbort);
-
-  let connectTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
-    abortReason = 'connect';
-    controller.abort();
-  }, CONNECT_TIMEOUT_MS);
-
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  const resetIdleTimer = () => {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      abortReason = 'idle';
-      controller.abort();
-    }, IDLE_TIMEOUT_MS);
-  };
-
-  try {
-    console.log(`[Push] POST ${MISTRAL_API_URL} (model: ${model})`);
-
-    const response = await fetch(MISTRAL_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent),
-        stream: true,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(connectTimer);
-    connectTimer = undefined;
-    resetIdleTimer();
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      let detail = '';
-      try {
-        const parsed = JSON.parse(body);
-        detail = parsed.error?.message || parsed.message || parsed.error || body.slice(0, 200);
-      } catch {
-        detail = body ? body.slice(0, 200) : 'empty body';
-      }
-      console.error(`[Push] Mistral error: ${response.status}`, detail);
-      throw new Error(`Mistral ${response.status}: ${detail}`);
+      console.error(`[Push] ${name} error: ${response.status}`, detail);
+      throw new Error(`${name} ${response.status}: ${detail}`);
     }
 
     const reader = response.body?.getReader();
@@ -878,10 +479,8 @@ export async function streamMistralChat(
 
     const decoder = new TextDecoder();
     let buffer = '';
-
     const chunker = createChunkedEmitter(onToken);
     const parser = createThinkTokenParser((token) => chunker.push(token), onThinkingToken);
-
     let usage: StreamUsage | undefined;
 
     while (true) {
@@ -921,18 +520,19 @@ export async function streamMistralChat(
           const choice = parsed.choices?.[0];
           if (!choice) continue;
 
-          // Mistral may emit reasoning via delta.reasoning_content
           const reasoningToken = choice.delta?.reasoning_content;
           if (reasoningToken) {
             onThinkingToken?.(reasoningToken);
+            if (shouldResetStallOnReasoning) resetStallTimer();
           }
 
           const token = choice.delta?.content;
           if (token) {
             parser.push(token);
+            if (stallTimeoutMs) resetStallTimer();
           }
 
-          if (choice.finish_reason === 'stop' || choice.finish_reason === 'end_turn' || choice.finish_reason === 'length') {
+          if (checkFinishReason(choice)) {
             parser.flush();
             chunker.flush();
             onDone(usage);
@@ -950,35 +550,212 @@ export async function streamMistralChat(
   } catch (err) {
     clearTimeout(connectTimer);
     clearTimeout(idleTimer);
+    clearTimeout(stallTimer);
+    clearTimeout(totalTimer);
 
     if (err instanceof DOMException && err.name === 'AbortError') {
       if (abortReason === 'user') {
-        // User-initiated abort - do not report as error
         onDone();
         return;
       }
-      const timeoutMsg = abortReason === 'connect'
-        ? `Mistral API didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be down.`
-        : `Mistral API stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
-      console.error(`[Push] Mistral timeout (${abortReason}):`, timeoutMsg);
+      let timeoutMsg: string;
+      switch (abortReason) {
+        case 'connect':
+          timeoutMsg = errorMessages.connect(Math.round(connectTimeoutMs / 1000));
+          break;
+        case 'stall':
+          timeoutMsg = errorMessages.stall?.(Math.round(stallTimeoutMs! / 1000)) ?? errorMessages.idle(Math.round(idleTimeoutMs / 1000));
+          break;
+        case 'total':
+          timeoutMsg = errorMessages.total?.(Math.round(totalTimeoutMs! / 1000)) ?? errorMessages.idle(Math.round(idleTimeoutMs / 1000));
+          break;
+        default:
+          timeoutMsg = errorMessages.idle(Math.round(idleTimeoutMs / 1000));
+      }
+      console.error(`[Push] ${name} timeout (${abortReason}):`, timeoutMsg);
       onError(new Error(timeoutMsg));
       return;
     }
 
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[Push] Mistral chat error:`, msg);
+    console.error(`[Push] ${name} chat error:`, msg);
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-      onError(new Error(
-        `Cannot reach Mistral — network error. Check your connection.`
-      ));
+      onError(new Error(errorMessages.network));
     } else {
       onError(err instanceof Error ? err : new Error(msg));
     }
   } finally {
     clearTimeout(connectTimer);
     clearTimeout(idleTimer);
+    clearTimeout(stallTimer);
+    clearTimeout(totalTimer);
     signal?.removeEventListener('abort', onExternalAbort);
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Kimi For Coding streaming (SSE — OpenAI-compatible)
+// ---------------------------------------------------------------------------
+
+export async function streamMoonshotChat(
+  messages: ChatMessage[],
+  onToken: (token: string) => void,
+  onDone: (usage?: StreamUsage) => void,
+  onError: (error: Error) => void,
+  onThinkingToken?: (token: string | null) => void,
+  workspaceContext?: string,
+  hasSandbox?: boolean,
+  modelOverride?: string,
+  systemPromptOverride?: string,
+  scratchpadContent?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const apiKey = getMoonshotKey();
+  if (!apiKey) {
+    onError(new Error('Moonshot API key not configured'));
+    return;
+  }
+
+  return streamSSEChat(
+    {
+      name: 'Moonshot',
+      apiUrl: KIMI_API_URL,
+      apiKey,
+      model: modelOverride || KIMI_MODEL,
+      connectTimeoutMs: 30_000,
+      idleTimeoutMs: 60_000,
+      errorMessages: {
+        keyMissing: 'Moonshot API key not configured',
+        connect: (s) => `Kimi API didn't respond within ${s}s — server may be down.`,
+        idle: (s) => `Kimi API stream stalled — no data for ${s}s.`,
+        network: 'Cannot reach Moonshot — network error. Check your connection.',
+      },
+      parseError: (p, f) => p.error?.message || p.error || f,
+      checkFinishReason: (c) => c.finish_reason === 'stop' || c.finish_reason === 'end_turn' || c.finish_reason === 'tool_calls',
+    },
+    messages,
+    onToken,
+    onDone,
+    onError,
+    onThinkingToken,
+    workspaceContext,
+    hasSandbox,
+    systemPromptOverride,
+    scratchpadContent,
+    signal,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ollama Cloud streaming (SSE — OpenAI-compatible)
+// ---------------------------------------------------------------------------
+
+export async function streamOllamaChat(
+  messages: ChatMessage[],
+  onToken: (token: string) => void,
+  onDone: (usage?: StreamUsage) => void,
+  onError: (error: Error) => void,
+  onThinkingToken?: (token: string | null) => void,
+  workspaceContext?: string,
+  hasSandbox?: boolean,
+  modelOverride?: string,
+  systemPromptOverride?: string,
+  scratchpadContent?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const apiKey = getOllamaKey();
+  if (!apiKey) {
+    onError(new Error('Ollama Cloud API key not configured'));
+    return;
+  }
+
+  return streamSSEChat(
+    {
+      name: 'Ollama Cloud',
+      apiUrl: OLLAMA_API_URL,
+      apiKey,
+      model: modelOverride || getOllamaModelName(),
+      connectTimeoutMs: 30_000,
+      idleTimeoutMs: 45_000,
+      stallTimeoutMs: 30_000,
+      totalTimeoutMs: 180_000,
+      errorMessages: {
+        keyMissing: 'Ollama Cloud API key not configured',
+        connect: (s) => `Ollama Cloud didn't respond within ${s}s — server may be cold-starting.`,
+        idle: (s) => `Ollama Cloud stream stalled — no data for ${s}s.`,
+        stall: (s) => `Ollama Cloud stream stalled — receiving data but no content for ${s}s. The model may be stuck.`,
+        total: (s) => `Ollama Cloud response exceeded ${s}s total time limit.`,
+        network: 'Cannot reach Ollama Cloud — network error. Check your connection.',
+      },
+      parseError: (p, f) => p.error?.message || p.error || f,
+      checkFinishReason: (c) => c.finish_reason != null,
+      shouldResetStallOnReasoning: true,
+    },
+    messages,
+    onToken,
+    onDone,
+    onError,
+    onThinkingToken,
+    workspaceContext,
+    hasSandbox,
+    systemPromptOverride,
+    scratchpadContent,
+    signal,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mistral Vibe streaming (SSE — OpenAI-compatible)
+// ---------------------------------------------------------------------------
+
+export async function streamMistralChat(
+  messages: ChatMessage[],
+  onToken: (token: string) => void,
+  onDone: (usage?: StreamUsage) => void,
+  onError: (error: Error) => void,
+  onThinkingToken?: (token: string | null) => void,
+  workspaceContext?: string,
+  hasSandbox?: boolean,
+  modelOverride?: string,
+  systemPromptOverride?: string,
+  scratchpadContent?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const apiKey = getMistralKey();
+  if (!apiKey) {
+    onError(new Error('Mistral API key not configured'));
+    return;
+  }
+
+  return streamSSEChat(
+    {
+      name: 'Mistral',
+      apiUrl: MISTRAL_API_URL,
+      apiKey,
+      model: modelOverride || getMistralModelName(),
+      connectTimeoutMs: 30_000,
+      idleTimeoutMs: 90_000,
+      errorMessages: {
+        keyMissing: 'Mistral API key not configured',
+        connect: (s) => `Mistral API didn't respond within ${s}s — server may be down.`,
+        idle: (s) => `Mistral API stream stalled — no data for ${s}s.`,
+        network: 'Cannot reach Mistral — network error. Check your connection.',
+      },
+      parseError: (p, f) => p.error?.message || p.message || p.error || f,
+      checkFinishReason: (c) => c.finish_reason === 'stop' || c.finish_reason === 'end_turn' || c.finish_reason === 'length',
+    },
+    messages,
+    onToken,
+    onDone,
+    onError,
+    onThinkingToken,
+    workspaceContext,
+    hasSandbox,
+    systemPromptOverride,
+    scratchpadContent,
+    signal,
+  );
 }
 
 // ---------------------------------------------------------------------------
