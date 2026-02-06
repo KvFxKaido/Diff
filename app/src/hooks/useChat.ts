@@ -181,8 +181,11 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
   const conversationProvider = conversations[activeChatId]?.provider;
 
   // Check if this conversation has user messages (i.e., provider is locked)
-  const isProviderLocked = messages.some(m => m.role === 'user');
-  const lockedProvider: AIProviderType | null = conversationProvider || (isProviderLocked ? getActiveProvider() : null);
+  // Provider is locked if: we have a stored provider, OR there are user messages (legacy chats)
+  const hasUserMessages = messages.some(m => m.role === 'user');
+  const isProviderLocked = Boolean(conversationProvider) || hasUserMessages;
+  // The locked provider: use stored one, or null for legacy chats (unknown)
+  const lockedProvider: AIProviderType | null = conversationProvider || null;
 
   // Filter sortedChatIds by active repo
   const sortedChatIds = useMemo(() => {
@@ -384,8 +387,8 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       const newTitle = isFirstMessage ? generateTitle(updatedWithUser) : conversations[chatId]?.title || 'New Chat';
 
       // Lock provider on first message: capture current provider and store in conversation
-      const currentProvider = getActiveProvider();
-      const lockedProviderForChat = isFirstMessage ? currentProvider : (conversations[chatId]?.provider || currentProvider);
+      // IMPORTANT: We capture the provider at send time, NOT from global state later
+      const providerToStore = isFirstMessage ? getActiveProvider() : undefined;
 
       const firstAssistant: ChatMessage = {
         id: createId(),
@@ -404,7 +407,7 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
             title: newTitle,
             lastMessageAt: Date.now(),
             // Store provider on first message
-            ...(isFirstMessage ? { provider: lockedProviderForChat } : {}),
+            ...(isFirstMessage && providerToStore ? { provider: providerToStore } : {}),
           },
         };
         saveConversations(updated);
