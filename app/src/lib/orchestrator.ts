@@ -573,16 +573,24 @@ export async function streamOllamaChat(
 
   const model = modelOverride || getOllamaModelName();
 
-  const CONNECT_TIMEOUT_MS = 30_000;
-  const IDLE_TIMEOUT_MS = 120_000; // Ollama Cloud can be slower on cold starts
+  const CONNECT_TIMEOUT_MS = 30_000;  // 30s to get initial response headers
+  const IDLE_TIMEOUT_MS = 45_000;     // 45s max silence (no bytes at all)
+  const STALL_TIMEOUT_MS = 30_000;    // 30s max receiving bytes but no content tokens
+  const TOTAL_TIMEOUT_MS = 180_000;   // 3 min absolute ceiling for entire response
 
   const controller = new AbortController();
-  let abortReason: 'connect' | 'idle' | null = null;
+  let abortReason: 'connect' | 'idle' | 'stall' | 'total' | null = null;
 
   let connectTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
     abortReason = 'connect';
     controller.abort();
   }, CONNECT_TIMEOUT_MS);
+
+  // Absolute timeout — prevents infinite hangs regardless of keep-alives
+  let totalTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+    abortReason = 'total';
+    controller.abort();
+  }, TOTAL_TIMEOUT_MS);
 
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   const resetIdleTimer = () => {
@@ -591,6 +599,16 @@ export async function streamOllamaChat(
       abortReason = 'idle';
       controller.abort();
     }, IDLE_TIMEOUT_MS);
+  };
+
+  // Content stall timer — fires when we receive bytes but no actual content tokens
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const resetStallTimer = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      abortReason = 'stall';
+      controller.abort();
+    }, STALL_TIMEOUT_MS);
   };
 
   try {
@@ -613,6 +631,7 @@ export async function streamOllamaChat(
     clearTimeout(connectTimer);
     connectTimer = undefined;
     resetIdleTimer();
+    resetStallTimer();
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
@@ -645,7 +664,7 @@ export async function streamOllamaChat(
       const { done, value } = await reader.read();
       if (done) break;
 
-      resetIdleTimer();
+      resetIdleTimer(); // got raw bytes — reset byte-level idle timer
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
@@ -682,14 +701,18 @@ export async function streamOllamaChat(
           const reasoningToken = choice.delta?.reasoning_content;
           if (reasoningToken) {
             onThinkingToken?.(reasoningToken);
+            resetStallTimer(); // got actual content — reset stall timer
           }
 
           const token = choice.delta?.content;
           if (token) {
             parser.push(token);
+            resetStallTimer(); // got actual content — reset stall timer
           }
 
-          if (choice.finish_reason === 'stop' || choice.finish_reason === 'end_turn' || choice.finish_reason === 'length') {
+          // Treat ANY non-null finish_reason as end-of-stream.
+          // Ollama models may return values other than 'stop' (e.g., 'eos').
+          if (choice.finish_reason) {
             parser.flush();
             chunker.flush();
             onDone(usage);
@@ -707,12 +730,19 @@ export async function streamOllamaChat(
   } catch (err) {
     clearTimeout(connectTimer);
     clearTimeout(idleTimer);
+    clearTimeout(stallTimer);
+    clearTimeout(totalTimer);
 
     if (err instanceof DOMException && err.name === 'AbortError') {
-      const timeoutMsg = abortReason === 'connect'
+      const reason = String(abortReason);
+      const timeoutMsg = reason === 'connect'
         ? `Ollama Cloud didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be cold-starting.`
+        : reason === 'stall'
+        ? `Ollama Cloud stream stalled — receiving data but no content for ${STALL_TIMEOUT_MS / 1000}s. The model may be stuck.`
+        : reason === 'total'
+        ? `Ollama Cloud response exceeded ${TOTAL_TIMEOUT_MS / 1000}s total time limit.`
         : `Ollama Cloud stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
-      console.error(`[Push] Ollama timeout (${abortReason}):`, timeoutMsg);
+      console.error(`[Push] Ollama timeout (${reason}):`, timeoutMsg);
       onError(new Error(timeoutMsg));
       return;
     }
@@ -729,6 +759,8 @@ export async function streamOllamaChat(
   } finally {
     clearTimeout(connectTimer);
     clearTimeout(idleTimer);
+    clearTimeout(stallTimer);
+    clearTimeout(totalTimer);
   }
 }
 

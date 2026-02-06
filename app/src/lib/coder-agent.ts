@@ -12,6 +12,7 @@ import { getModelForRole } from './providers';
 import { detectSandboxToolCall, executeSandboxToolCall, SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
 
 const MAX_CODER_ROUNDS = 5;
+const CODER_ROUND_TIMEOUT_MS = 90_000; // 90s max per streaming round
 
 // Size limits to prevent 413 errors from provider APIs
 const MAX_TOOL_RESULT_SIZE = 8000;   // Max chars per tool result
@@ -89,13 +90,25 @@ export async function runCoderAgent(
 
     let accumulated = '';
 
-    // Stream Coder response via the active provider
+    // Stream Coder response via the active provider, with a per-round timeout
+    // to prevent indefinite hangs (e.g., Ollama keep-alives with no content)
     const streamError = await new Promise<Error | null>((resolve) => {
+      let settled = false;
+      const settle = (v: Error | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(roundTimer);
+        resolve(v);
+      };
+      const roundTimer = setTimeout(() => {
+        settle(new Error(`Coder round ${rounds} timed out after ${CODER_ROUND_TIMEOUT_MS / 1000}s — model may be unresponsive.`));
+      }, CODER_ROUND_TIMEOUT_MS);
+
       streamFn(
         messages,
         (token) => { accumulated += token; },
-        () => resolve(null),
-        (error) => resolve(error),
+        () => settle(null),
+        (error) => settle(error),
         undefined, // no thinking tokens needed
         undefined, // no workspace context (Coder uses sandbox)
         true,      // hasSandbox
