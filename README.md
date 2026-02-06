@@ -34,7 +34,7 @@ The app is free. The AI isn't — but you pick who you pay.
 | Create PRs | ✅ | ✅ |
 | Push directly to main | ❌ Limited | ✅ Your GitHub App, your rules |
 | Token management | Microsoft-managed | Auto-refreshing GitHub App |
-| Model backend | GPT-4 only | Kimi, Ollama, Mistral, or bring your own |
+| Model backend | Tiered access (GPT-4.1, 4o, Claude 4.5 Haiku on Free; rest paywalled) | Kimi, Ollama, Mistral, or bring your own |
 | Hosting | Microsoft's cloud | Your Cloudflare account (or self-hosted) |
 
 Copilot is desktop-first and IDE-bound. Push is mobile-native and repo-locked — you grant exactly the permissions you want, and the agent works within those bounds. Perfect for teams that need direct write access, custom integrations, or compliance requirements.
