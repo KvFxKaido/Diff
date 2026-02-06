@@ -1,14 +1,14 @@
 /**
  * Coder Agent — sub-agent that implements coding tasks autonomously.
  *
- * Uses the active AI provider with role-specific model selection.
+ * Uses Kimi (moonshot) provider regardless of user's Orchestrator preference.
  * The Coder can read files, write files, run commands, and get diffs
  * all within the sandbox. It runs up to 5 rounds before exiting.
  */
 
 import type { ChatMessage, ChatCard } from '@/types';
-import { getActiveProvider, getProviderStreamFn } from './orchestrator';
-import { getModelForRole } from './providers';
+import { streamMoonshotChat } from './orchestrator';
+import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 import { detectSandboxToolCall, executeSandboxToolCall, SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
 
 const MAX_CODER_ROUNDS = 5;
@@ -54,12 +54,12 @@ export async function runCoderAgent(
   onStatus: (phase: string, detail?: string) => void,
   agentsMd?: string,
 ): Promise<{ summary: string; cards: ChatCard[]; rounds: number }> {
-  const provider = getActiveProvider();
-  const { providerType, streamFn } = getProviderStreamFn(provider);
+  // Coder always uses Kimi K2.5, regardless of user's Orchestrator provider
+  const CODER_MODEL = 'k2p5';
 
-  const coderModel = getModelForRole(providerType, 'coder');
-  if (!coderModel) {
-    throw new Error(`Coder model not configured for ${providerType}.`);
+  // Fail-fast: require Kimi API key
+  if (!getMoonshotKey()) {
+    throw new Error('Kimi API key not configured. Coder requires Kimi to run.');
   }
 
   // Build system prompt, optionally including AGENTS.md (truncated if too large)
@@ -88,9 +88,9 @@ export async function runCoderAgent(
 
     let accumulated = '';
 
-    // Stream Coder response via active provider
+    // Stream Coder response via Kimi (always)
     const streamError = await new Promise<Error | null>((resolve) => {
-      streamFn(
+      streamMoonshotChat(
         messages,
         (token) => { accumulated += token; },
         () => resolve(null),
@@ -98,7 +98,7 @@ export async function runCoderAgent(
         undefined, // no thinking tokens needed
         undefined, // no workspace context (Coder uses sandbox)
         true,      // hasSandbox
-        coderModel.id,
+        CODER_MODEL,
         systemPrompt,
       );
     });

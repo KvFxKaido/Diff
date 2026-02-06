@@ -1,16 +1,20 @@
 /**
  * Auditor Agent — reviews diffs for safety before allowing commits.
  *
- * Uses Kimi K2 Thinking via Moonshot. Produces a binary verdict:
- * SAFE or UNSAFE, plus a structured risk assessment.
+ * Per AGENTS.md architecture: Auditor ALWAYS uses Kimi K2.5 via Moonshot,
+ * regardless of user's Orchestrator provider preference. This ensures
+ * consistent, reliable security reviews. The Orchestrator provider choice
+ * (Ollama/Mistral) only affects the conversational interface, not safety checks.
  *
  * Design: fail-safe. If the Auditor returns invalid JSON or errors,
  * the verdict defaults to UNSAFE (blocking the commit).
  */
 
 import type { ChatMessage, AuditVerdictCardData } from '@/types';
-import { getActiveProvider, getProviderStreamFn } from './orchestrator';
-import { getModelForRole } from './providers';
+import { streamMoonshotChat } from './orchestrator';
+import { getMoonshotKey } from '@/hooks/useMoonshotKey';
+
+const AUDITOR_MODEL = 'k2p5';
 
 const AUDITOR_SYSTEM_PROMPT = `You are the Auditor agent for Push, a mobile AI coding assistant. Your sole job is to review code diffs for safety.
 
@@ -52,24 +56,21 @@ export async function runAuditor(
   diff: string,
   onStatus: (phase: string) => void,
 ): Promise<{ verdict: 'safe' | 'unsafe'; card: AuditVerdictCardData }> {
-  const provider = getActiveProvider();
-  const { providerType, streamFn } = getProviderStreamFn(provider);
+  const filesReviewed = parseDiffFileCount(diff);
 
-  const auditorModel = getModelForRole(providerType, 'auditor');
-  if (!auditorModel) {
-    // No auditor model → fail-safe to unsafe
+  // Fail-safe: require Kimi API key. Per AGENTS.md: "A Kimi API key is
+  // required for full functionality. Coder and Auditor always use Kimi."
+  if (!getMoonshotKey()) {
     return {
       verdict: 'unsafe',
       card: {
         verdict: 'unsafe',
-        summary: 'Auditor model not configured. Cannot verify safety.',
-        risks: [{ level: 'high', description: 'No auditor available — defaulting to UNSAFE' }],
-        filesReviewed: 0,
+        summary: 'Kimi API key not configured. Cannot run Auditor.',
+        risks: [{ level: 'high', description: 'Auditor requires Kimi API key — defaulting to UNSAFE' }],
+        filesReviewed,
       },
     };
   }
-
-  const filesReviewed = parseDiffFileCount(diff);
 
   onStatus('Auditor reviewing...');
 
@@ -85,7 +86,10 @@ export async function runAuditor(
   let accumulated = '';
 
   const streamError = await new Promise<Error | null>((resolve) => {
-    streamFn(
+    // CRITICAL: Auditor always uses Kimi K2.5. This is intentional architecture
+    // per AGENTS.md: "Coder and Auditor always use Kimi, even when the user
+    // selects Ollama or Mistral for the Orchestrator."
+    streamMoonshotChat(
       messages,
       (token) => { accumulated += token; },
       () => resolve(null),
@@ -93,7 +97,7 @@ export async function runAuditor(
       undefined, // no thinking tokens
       undefined, // no workspace context
       false,     // no sandbox
-      auditorModel.id,
+      AUDITOR_MODEL,
       AUDITOR_SYSTEM_PROMPT,
     );
   });
