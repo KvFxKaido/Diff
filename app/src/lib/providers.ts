@@ -1,6 +1,9 @@
 import type { AIProviderType, AIProviderConfig, AIModel, AgentRole } from '@/types';
 
-export const OLLAMA_DEFAULT_MODEL = 'kimi-k2.5:cloud';
+// Valid Ollama model names — these must exist on the Ollama server
+export const OLLAMA_DEFAULT_MODEL = 'kimi-k2.5';
+
+// Valid Mistral model names via Mistral API
 export const MISTRAL_DEFAULT_MODEL = 'devstral-small-latest';
 
 export const PROVIDERS: AIProviderConfig[] = [
@@ -35,10 +38,10 @@ export const PROVIDERS: AIProviderConfig[] = [
   },
   {
     type: 'ollama',
-    name: 'Ollama Cloud',
-    description: 'Ollama Cloud — run open models on cloud GPUs (OpenAI-compatible)',
+    name: 'Ollama',
+    description: 'Ollama — run open models locally or on cloud GPUs (OpenAI-compatible)',
     envKey: 'VITE_OLLAMA_API_KEY',
-    envUrl: 'https://ollama.com',
+    envUrl: 'http://localhost:11434',
     models: [
       {
         id: OLLAMA_DEFAULT_MODEL,
@@ -65,8 +68,8 @@ export const PROVIDERS: AIProviderConfig[] = [
   },
   {
     type: 'mistral',
-    name: 'Mistral Vibe',
-    description: 'Devstral via Mistral API (OpenAI-compatible)',
+    name: 'Mistral',
+    description: 'Mistral AI API — Devstral and other models (OpenAI-compatible)',
     envKey: 'VITE_MISTRAL_API_KEY',
     envUrl: 'https://console.mistral.ai',
     models: [
@@ -126,7 +129,7 @@ export function getModelForRole(
 }
 
 // ---------------------------------------------------------------------------
-// Ollama Cloud — runtime model name (stored in localStorage)
+// Ollama — runtime model name (stored in localStorage)
 // ---------------------------------------------------------------------------
 
 const OLLAMA_MODEL_KEY = 'ollama_model';
@@ -144,7 +147,7 @@ export function setOllamaModelName(model: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Mistral Vibe — runtime model name (stored in localStorage)
+// Mistral — runtime model name (stored in localStorage)
 // ---------------------------------------------------------------------------
 
 const MISTRAL_MODEL_KEY = 'mistral_model';

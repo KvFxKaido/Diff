@@ -1,7 +1,7 @@
 /**
  * Coder Agent — sub-agent that implements coding tasks autonomously.
  *
- * Uses Kimi K2 via Moonshot with its own tool loop.
+ * Uses the active AI provider with role-specific model selection.
  * The Coder can read files, write files, run commands, and get diffs
  * all within the sandbox. It runs up to 5 rounds before exiting.
  */
@@ -142,21 +142,18 @@ export async function runCoderAgent(
       isToolResult: true,
     });
 
-    // If context is getting too large, trim older messages (keep first task + recent)
-    const contextSize = estimateMessagesSize(messages);
-    if (contextSize > MAX_TOTAL_CONTEXT_SIZE && messages.length > 4) {
-      console.log(`[Push] Coder context too large (${contextSize} chars), trimming older messages`);
-      // Keep first message (task) and last 3 messages (recent context)
-      const first = messages[0];
-      const recent = messages.slice(-3);
-      messages.length = 0;
-      messages.push(first, ...recent);
+    // Safety check: if context is getting too large, truncate oldest non-system messages
+    const totalSize = estimateMessagesSize(messages);
+    if (totalSize > MAX_TOTAL_CONTEXT_SIZE) {
+      // Keep system prompt (implied) and last 4 message pairs
+      const keepCount = Math.min(9, messages.length); // system + 4 pairs = 9
+      messages.splice(0, messages.length - keepCount);
     }
   }
 
-  // Max rounds reached — return what we have
+  // Max rounds reached
   return {
-    summary: 'Coder reached maximum rounds. Check the diff for changes made so far.',
+    summary: `Reached max rounds (${MAX_CODER_ROUNDS}). Last response:\n\n${messages[messages.length - 1]?.content || '(no response)'}`,
     cards: allCards,
     rounds,
   };
