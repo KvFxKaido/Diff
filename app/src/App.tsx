@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Settings, Trash2, FolderOpen } from 'lucide-react';
+import { Settings, Trash2, FolderOpen, Cpu } from 'lucide-react';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
 import { useGitHubAuth } from '@/hooks/useGitHubAuth';
@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import './App.css';
 
 const PROVIDER_LABELS: Record<string, string> = { ollama: 'Ollama', moonshot: 'Kimi', mistral: 'Mistral' };
+const PROVIDER_ICONS: Record<string, string> = { ollama: '🦙', moonshot: '🌙', mistral: '🌪️' };
 
 function App() {
   const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
@@ -104,6 +105,12 @@ function App() {
   // Derive display label from actual active provider
   const activeProviderLabel = getActiveProvider();
   const availableProviders = ([['moonshot', 'Kimi', hasKimiKey], ['ollama', 'Ollama', hasOllamaKey], ['mistral', 'Mistral', hasMistralKey]] as const).filter(([, , has]) => has);
+  
+  // Provider locking: once user sends first message, lock to that provider for this chat
+  const hasUserMessages = messages.some(m => m.role === 'user');
+  const isProviderLocked = hasUserMessages;
+  const lockedProvider = isProviderLocked ? activeProviderLabel : null;
+  
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [installIdInput, setInstallIdInput] = useState('');
   const [showInstallIdInput, setShowInstallIdInput] = useState(false);
@@ -212,7 +219,7 @@ function App() {
     if (token) syncRepos();
   }, [token, syncRepos]);
 
-  // Wrap createNewChat to also re-sync repos
+  // Wrap createNewChat to also re-sync repos and clear provider lock
   const handleCreateNewChat = useCallback(() => {
     createNewChat();
     syncRepos();
@@ -322,16 +329,30 @@ function App() {
               <FolderOpen className="h-4 w-4" />
             </button>
           )}
-          <div className="flex items-center gap-1.5">
+          
+          {/* Provider indicator with lock status */}
+          <div className="flex items-center gap-2">
             <div
-              className={`h-2 w-2 rounded-full transition-colors duration-200 ${
-                isConnected ? 'bg-emerald-500' : 'bg-[#52525b]'
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${
+                isProviderLocked 
+                  ? 'bg-[#0d0d0d] border border-[#1a1a1a]' 
+                  : ''
               }`}
-            />
-            <span className="text-xs text-[#52525b]">
-              {PROVIDER_LABELS[activeProviderLabel] || (isDemo ? 'Demo' : isConnected ? 'GitHub' : 'Offline')}
-            </span>
+              title={isProviderLocked 
+                ? `${PROVIDER_LABELS[lockedProvider || '']} locked for this chat` 
+                : 'Provider can be changed until first message'}
+            >
+              <Cpu className={`h-3 w-3 ${isProviderLocked ? 'text-emerald-500' : 'text-[#52525b]'}`} />
+              <span className={`text-xs ${isProviderLocked ? 'text-[#a1a1aa]' : 'text-[#52525b]'}`}>
+                {PROVIDER_ICONS[lockedProvider || activeProviderLabel] || '⚡'}
+                {PROVIDER_LABELS[lockedProvider || activeProviderLabel] || (isDemo ? 'Demo' : isConnected ? 'GitHub' : 'Offline')}
+              </span>
+              {isProviderLocked && (
+                <span className="text-[10px] text-[#52525b] ml-1">🔒</span>
+              )}
+            </div>
           </div>
+          
           <button
             onClick={() => setSettingsOpen(true)}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-[#52525b] transition-colors duration-200 hover:text-[#a1a1aa] hover:bg-[#0d0d0d] active:scale-95"
@@ -543,23 +564,40 @@ function App() {
                 </div>
               </div>
 
-              {/* Backend picker — shown when 2+ providers have keys */}
+              {/* Provider lock warning */}
+              {isProviderLocked && (
+                <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                  <p className="text-xs text-amber-400">
+                    🔒 Provider locked for this chat
+                  </p>
+                  <p className="text-xs text-[#71717a] mt-0.5">
+                    Start a new chat to switch providers
+                  </p>
+                </div>
+              )}
+
+              {/* Backend picker — shown when 2+ providers have keys, disabled when locked */}
               {availableProviders.length >= 2 && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[#a1a1aa]">Active backend</label>
+                <div className={`space-y-1.5 ${isProviderLocked ? 'opacity-50' : ''}`}>
+                  <label className="text-xs font-medium text-[#a1a1aa]">
+                    Active backend
+                    {isProviderLocked && ' (locked)'}
+                  </label>
                   <div className="flex gap-2">
                     {availableProviders.map(([value, label]) => (
                       <button
                         key={value}
                         onClick={() => {
+                          if (isProviderLocked) return;
                           setPreferredProvider(value);
                           setActiveBackend(value);
                         }}
+                        disabled={isProviderLocked}
                         className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                           (activeBackend ?? activeProviderLabel) === value
                             ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
                             : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
-                        }`}
+                        } ${isProviderLocked ? 'cursor-not-allowed' : ''}`}
                       >
                         {label}
                       </button>
@@ -568,9 +606,9 @@ function App() {
                 </div>
               )}
 
-              {/* Ollama Cloud */}
+              {/* Ollama */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-[#a1a1aa]">Ollama Cloud</label>
+                <label className="text-xs font-medium text-[#a1a1aa]">Ollama</label>
                 {hasOllamaKey ? (
                   <div className="space-y-2">
                     <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
@@ -594,7 +632,7 @@ function App() {
                             setOllamaModelInput('');
                           }
                         }}
-                        placeholder="kimi-k2.5:cloud"
+                        placeholder="kimi-k2.5"
                         className="flex-1 rounded-md border border-[#1a1a1a] bg-[#0d0d0d] px-2 py-1 text-xs text-[#fafafa] font-mono placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
                       />
                     </div>
@@ -619,7 +657,7 @@ function App() {
                       type="password"
                       value={ollamaKeyInput}
                       onChange={(e) => setOllamaKeyInput(e.target.value)}
-                      placeholder="Ollama Cloud API key"
+                      placeholder="Ollama API key"
                       className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && ollamaKeyInput.trim()) {
@@ -643,7 +681,7 @@ function App() {
                       Save Ollama key
                     </Button>
                     <p className="text-xs text-[#52525b]">
-                      Ollama Cloud API key from ollama.com/cloud.
+                      Ollama API key (local or cloud).
                     </p>
                   </div>
                 )}
@@ -710,9 +748,9 @@ function App() {
                 )}
               </div>
 
-              {/* Mistral Vibe */}
+              {/* Mistral */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-[#a1a1aa]">Mistral Vibe</label>
+                <label className="text-xs font-medium text-[#a1a1aa]">Mistral</label>
                 {hasMistralKey ? (
                   <div className="space-y-2">
                     <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
