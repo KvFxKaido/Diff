@@ -1,19 +1,19 @@
 /**
  * Coder Agent — sub-agent that implements coding tasks autonomously.
  *
- * Uses Kimi (moonshot) provider regardless of user's Orchestrator preference.
- * The Coder can read files, write files, run commands, and get diffs
- * all within the sandbox. It runs up to 5 rounds before exiting.
+ * Uses the active provider (Kimi / Ollama / Mistral) with the role-specific
+ * model resolved via providers.ts. The Coder can read files, write files,
+ * run commands, and get diffs — all within the sandbox. Runs up to 5 rounds.
  */
 
 import type { ChatMessage, ChatCard } from '@/types';
-import { streamMoonshotChat } from './orchestrator';
-import { getMoonshotKey } from '@/hooks/useMoonshotKey';
+import { getActiveProvider, getProviderStreamFn } from './orchestrator';
+import { getModelForRole } from './providers';
 import { detectSandboxToolCall, executeSandboxToolCall, SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
 
 const MAX_CODER_ROUNDS = 5;
 
-// Size limits to prevent 413 errors from Kimi API
+// Size limits to prevent 413 errors from provider APIs
 const MAX_TOOL_RESULT_SIZE = 8000;   // Max chars per tool result
 const MAX_AGENTS_MD_SIZE = 4000;     // Max chars for AGENTS.md
 const MAX_TOTAL_CONTEXT_SIZE = 60000; // Rough limit for total message content
@@ -54,13 +54,14 @@ export async function runCoderAgent(
   onStatus: (phase: string, detail?: string) => void,
   agentsMd?: string,
 ): Promise<{ summary: string; cards: ChatCard[]; rounds: number }> {
-  // Coder always uses Kimi K2.5, regardless of user's Orchestrator provider
-  const CODER_MODEL = 'k2p5';
-
-  // Fail-fast: require Kimi API key
-  if (!getMoonshotKey()) {
-    throw new Error('Kimi API key not configured. Coder requires Kimi to run.');
+  // Resolve provider and model for the 'coder' role via providers.ts
+  const activeProvider = getActiveProvider();
+  if (activeProvider === 'demo') {
+    throw new Error('No AI provider configured. Add an API key in Settings.');
   }
+  const { streamFn } = getProviderStreamFn(activeProvider);
+  const roleModel = getModelForRole(activeProvider, 'coder');
+  const coderModelId = roleModel?.id; // undefined falls back to provider default
 
   // Build system prompt, optionally including AGENTS.md (truncated if too large)
   let systemPrompt = CODER_SYSTEM_PROMPT;
@@ -88,9 +89,9 @@ export async function runCoderAgent(
 
     let accumulated = '';
 
-    // Stream Coder response via Kimi (always)
+    // Stream Coder response via the active provider
     const streamError = await new Promise<Error | null>((resolve) => {
-      streamMoonshotChat(
+      streamFn(
         messages,
         (token) => { accumulated += token; },
         () => resolve(null),
@@ -98,7 +99,7 @@ export async function runCoderAgent(
         undefined, // no thinking tokens needed
         undefined, // no workspace context (Coder uses sandbox)
         true,      // hasSandbox
-        CODER_MODEL,
+        coderModelId,
         systemPrompt,
       );
     });
