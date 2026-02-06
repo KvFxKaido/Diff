@@ -2,7 +2,7 @@ export type AppState = 'home' | 'running' | 'results' | 'repos';
 
 export type AgentRole = 'orchestrator' | 'coder' | 'auditor';
 
-export type AIProviderType = 'moonshot' | 'ollama' | 'mistral';
+export type AIProviderType = 'moonshot' | 'ollama' | 'mistral' | 'demo';
 
 export interface AIModel {
   id: string;
@@ -277,6 +277,8 @@ export interface Conversation {
   createdAt: number;
   lastMessageAt: number;
   repoFullName?: string;  // "owner/repo". Undefined = unscoped (legacy/demo).
+  /** The AI provider that was used when the first message was sent. Locked for the whole conversation. */
+  provider?: AIProviderType;
 }
 
 // Onboarding + Active Repo types

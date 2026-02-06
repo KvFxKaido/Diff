@@ -22,7 +22,7 @@ import { ScratchpadDrawer } from '@/components/chat/ScratchpadDrawer';
 import { OnboardingScreen } from '@/sections/OnboardingScreen';
 import { RepoPicker } from '@/sections/RepoPicker';
 import { FileBrowser } from '@/sections/FileBrowser';
-import type { AppScreen, RepoWithActivity } from '@/types';
+import type { AppScreen, RepoWithActivity, AIProviderType } from '@/types';
 import {
   Sheet,
   SheetContent,
@@ -33,8 +33,18 @@ import {
 import { Button } from '@/components/ui/button';
 import './App.css';
 
-const PROVIDER_LABELS: Record<string, string> = { ollama: 'Ollama', moonshot: 'Kimi', mistral: 'Mistral' };
-const PROVIDER_ICONS: Record<string, string> = { ollama: '🦙', moonshot: '🌙', mistral: '🌪️' };
+const PROVIDER_LABELS: Record<AIProviderType, string> = { 
+  ollama: 'Ollama', 
+  moonshot: 'Kimi', 
+  mistral: 'Mistral',
+  demo: 'Demo'
+};
+const PROVIDER_ICONS: Record<AIProviderType, string> = { 
+  ollama: '🦙', 
+  moonshot: '🌙', 
+  mistral: '🌪️',
+  demo: '⚡'
+};
 
 function App() {
   const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
@@ -44,6 +54,8 @@ function App() {
     sendMessage,
     agentStatus,
     isStreaming,
+    lockedProvider,
+    isProviderLocked,
     conversations,
     activeChatId,
     sortedChatIds,
@@ -105,11 +117,6 @@ function App() {
   // Derive display label from actual active provider
   const activeProviderLabel = getActiveProvider();
   const availableProviders = ([['moonshot', 'Kimi', hasKimiKey], ['ollama', 'Ollama', hasOllamaKey], ['mistral', 'Mistral', hasMistralKey]] as const).filter(([, , has]) => has);
-  
-  // Provider locking: once user sends first message, lock to that provider for this chat
-  const hasUserMessages = messages.some(m => m.role === 'user');
-  const isProviderLocked = hasUserMessages;
-  const lockedProvider = isProviderLocked ? activeProviderLabel : null;
   
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [installIdInput, setInstallIdInput] = useState('');
@@ -219,7 +226,7 @@ function App() {
     if (token) syncRepos();
   }, [token, syncRepos]);
 
-  // Wrap createNewChat to also re-sync repos and clear provider lock
+  // Wrap createNewChat to also re-sync repos
   const handleCreateNewChat = useCallback(() => {
     createNewChat();
     syncRepos();
@@ -339,13 +346,13 @@ function App() {
                   : ''
               }`}
               title={isProviderLocked 
-                ? `${PROVIDER_LABELS[lockedProvider || '']} locked for this chat` 
+                ? `${PROVIDER_LABELS[lockedProvider || 'demo']} locked for this chat` 
                 : 'Provider can be changed until first message'}
             >
               <Cpu className={`h-3 w-3 ${isProviderLocked ? 'text-emerald-500' : 'text-[#52525b]'}`} />
               <span className={`text-xs ${isProviderLocked ? 'text-[#a1a1aa]' : 'text-[#52525b]'}`}>
-                {PROVIDER_ICONS[lockedProvider || activeProviderLabel] || '⚡'}
-                {PROVIDER_LABELS[lockedProvider || activeProviderLabel] || (isDemo ? 'Demo' : isConnected ? 'GitHub' : 'Offline')}
+                {PROVIDER_ICONS[lockedProvider || activeProviderLabel]}
+                {PROVIDER_LABELS[lockedProvider || activeProviderLabel]}
               </span>
               {isProviderLocked && (
                 <span className="text-[10px] text-[#52525b] ml-1">🔒</span>
@@ -559,16 +566,18 @@ function App() {
                     }`}
                   />
                   <span className="text-xs text-[#a1a1aa]">
-                    {PROVIDER_LABELS[activeProviderLabel] || (isDemo ? 'Demo' : 'Offline')}
+                    {isProviderLocked 
+                      ? `${PROVIDER_LABELS[lockedProvider || 'demo']} 🔒` 
+                      : (PROVIDER_LABELS[activeProviderLabel] || 'Offline')}
                   </span>
                 </div>
               </div>
 
-              {/* Provider lock warning */}
-              {isProviderLocked && (
+              {/* Provider lock warning for current chat */}
+              {isProviderLocked && lockedProvider && (
                 <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
                   <p className="text-xs text-amber-400">
-                    🔒 Provider locked for this chat
+                    🔒 {PROVIDER_LABELS[lockedProvider]} locked for this chat
                   </p>
                   <p className="text-xs text-[#71717a] mt-0.5">
                     Start a new chat to switch providers
@@ -606,6 +615,8 @@ function App() {
                 </div>
               )}
 
+              {/* ... rest of provider config sections ... */}
+              
               {/* Ollama */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-[#a1a1aa]">Ollama</label>

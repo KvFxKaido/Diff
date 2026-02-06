@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData } from '@/types';
-import { streamChat } from '@/lib/orchestrator';
+import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData, AIProviderType } from '@/types';
+import { streamChat, getActiveProvider } from '@/lib/orchestrator';
 import { detectAnyToolCall, executeAnyToolCall } from '@/lib/tool-dispatch';
 import type { AnyToolCall } from '@/lib/tool-dispatch';
 import { runCoderAgent } from '@/lib/coder-agent';
@@ -178,6 +178,11 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
 
   // Derived state
   const messages = conversations[activeChatId]?.messages || [];
+  const conversationProvider = conversations[activeChatId]?.provider;
+
+  // Check if this conversation has user messages (i.e., provider is locked)
+  const isProviderLocked = messages.some(m => m.role === 'user');
+  const lockedProvider: AIProviderType | null = conversationProvider || (isProviderLocked ? getActiveProvider() : null);
 
   // Filter sortedChatIds by active repo
   const sortedChatIds = useMemo(() => {
@@ -378,6 +383,10 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       const isFirstMessage = currentMessages.length === 0;
       const newTitle = isFirstMessage ? generateTitle(updatedWithUser) : conversations[chatId]?.title || 'New Chat';
 
+      // Lock provider on first message: capture current provider and store in conversation
+      const currentProvider = getActiveProvider();
+      const lockedProviderForChat = isFirstMessage ? currentProvider : (conversations[chatId]?.provider || currentProvider);
+
       const firstAssistant: ChatMessage = {
         id: createId(),
         role: 'assistant',
@@ -394,6 +403,8 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
             messages: [...updatedWithUser, firstAssistant],
             title: newTitle,
             lastMessageAt: Date.now(),
+            // Store provider on first message
+            ...(isFirstMessage ? { provider: lockedProviderForChat } : {}),
           },
         };
         saveConversations(updated);
@@ -873,6 +884,8 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
     sendMessage,
     agentStatus,
     isStreaming,
+    lockedProvider,
+    isProviderLocked,
 
     // Multi-chat management
     conversations,
