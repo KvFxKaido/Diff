@@ -8,7 +8,7 @@ import { useRepos } from '@/hooks/useRepos';
 import { useActiveRepo } from '@/hooks/useActiveRepo';
 import { useMoonshotKey } from '@/hooks/useMoonshotKey';
 import { useOllamaConfig } from '@/hooks/useOllamaConfig';
-import { getPreferredProvider, setPreferredProvider, type PreferredProvider } from '@/lib/providers';
+import { getPreferredProvider, setPreferredProvider, clearPreferredProvider, type PreferredProvider } from '@/lib/providers';
 import { getActiveProvider } from '@/lib/orchestrator';
 import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
@@ -594,7 +594,13 @@ function App() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => clearOllamaKey()}
+                      onClick={() => {
+                        clearOllamaKey();
+                        if (activeBackend === 'ollama') {
+                          clearPreferredProvider();
+                          setActiveBackend(null);
+                        }
+                      }}
                       className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
                     >
                       Remove key
@@ -649,7 +655,13 @@ function App() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => clearKimiKey()}
+                      onClick={() => {
+                        clearKimiKey();
+                        if (activeBackend === 'moonshot') {
+                          clearPreferredProvider();
+                          setActiveBackend(null);
+                        }
+                      }}
                       className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
                     >
                       Remove key
