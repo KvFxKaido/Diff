@@ -362,6 +362,7 @@ export async function streamMoonshotChat(
   modelOverride?: string,
   systemPromptOverride?: string,
   scratchpadContent?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const apiKey = getMoonshotKey();
   if (!apiKey) {
@@ -375,7 +376,14 @@ export async function streamMoonshotChat(
   const IDLE_TIMEOUT_MS = 60_000;    // 60s max silence during streaming
 
   const controller = new AbortController();
-  let abortReason: 'connect' | 'idle' | null = null;
+  let abortReason: 'connect' | 'idle' | 'user' | null = null;
+
+  // Wire up external abort signal
+  const onExternalAbort = () => {
+    abortReason = 'user';
+    controller.abort();
+  };
+  signal?.addEventListener('abort', onExternalAbort);
 
   // Connection timeout — abort if server doesn't respond
   let connectTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
@@ -526,6 +534,11 @@ export async function streamMoonshotChat(
 
     // Handle abort errors with specific messages
     if (err instanceof DOMException && err.name === 'AbortError') {
+      if (abortReason === 'user') {
+        // User-initiated abort - do not report as error
+        onDone();
+        return;
+      }
       const timeoutMsg = abortReason === 'connect'
         ? `Kimi API didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be down.`
         : `Kimi API stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
@@ -546,6 +559,7 @@ export async function streamMoonshotChat(
   } finally {
     clearTimeout(connectTimer);
     clearTimeout(idleTimer);
+    signal?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -564,6 +578,7 @@ export async function streamOllamaChat(
   modelOverride?: string,
   systemPromptOverride?: string,
   scratchpadContent?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const apiKey = getOllamaKey();
   if (!apiKey) {
@@ -734,6 +749,11 @@ export async function streamOllamaChat(
     clearTimeout(totalTimer);
 
     if (err instanceof DOMException && err.name === 'AbortError') {
+      if (abortReason === 'user') {
+        // User-initiated abort - do not report as error
+        onDone();
+        return;
+      }
       const reason = String(abortReason);
       const timeoutMsg = reason === 'connect'
         ? `Ollama Cloud didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be cold-starting.`
@@ -761,6 +781,7 @@ export async function streamOllamaChat(
     clearTimeout(idleTimer);
     clearTimeout(stallTimer);
     clearTimeout(totalTimer);
+    signal?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -779,6 +800,7 @@ export async function streamMistralChat(
   modelOverride?: string,
   systemPromptOverride?: string,
   scratchpadContent?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const apiKey = getMistralKey();
   if (!apiKey) {
@@ -792,7 +814,14 @@ export async function streamMistralChat(
   const IDLE_TIMEOUT_MS = 90_000; // Mistral API is generally fast
 
   const controller = new AbortController();
-  let abortReason: 'connect' | 'idle' | null = null;
+  let abortReason: 'connect' | 'idle' | 'user' | null = null;
+
+  // Wire up external abort signal
+  const onExternalAbort = () => {
+    abortReason = 'user';
+    controller.abort();
+  };
+  signal?.addEventListener('abort', onExternalAbort);
 
   let connectTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
     abortReason = 'connect';
@@ -923,6 +952,11 @@ export async function streamMistralChat(
     clearTimeout(idleTimer);
 
     if (err instanceof DOMException && err.name === 'AbortError') {
+      if (abortReason === 'user') {
+        // User-initiated abort - do not report as error
+        onDone();
+        return;
+      }
       const timeoutMsg = abortReason === 'connect'
         ? `Mistral API didn't respond within ${CONNECT_TIMEOUT_MS / 1000}s — server may be down.`
         : `Mistral API stream stalled — no data for ${IDLE_TIMEOUT_MS / 1000}s.`;
@@ -943,6 +977,7 @@ export async function streamMistralChat(
   } finally {
     clearTimeout(connectTimer);
     clearTimeout(idleTimer);
+    signal?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -1003,6 +1038,7 @@ export async function streamChat(
   workspaceContext?: string,
   hasSandbox?: boolean,
   scratchpadContent?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const provider = getActiveProvider();
 
@@ -1018,12 +1054,12 @@ export async function streamChat(
   }
 
   if (provider === 'ollama') {
-    return streamOllamaChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent);
+    return streamOllamaChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent, signal);
   }
 
   if (provider === 'mistral') {
-    return streamMistralChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent);
+    return streamMistralChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent, signal);
   }
 
-  return streamMoonshotChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent);
+  return streamMoonshotChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, undefined, undefined, scratchpadContent, signal);
 }

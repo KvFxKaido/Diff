@@ -160,6 +160,7 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>({ active: false, phase: '' });
   const abortRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const workspaceContextRef = useRef<string | null>(null);
   const sandboxIdRef = useRef<string | null>(null);
   const autoCreateRef = useRef(false); // Guard against creation loops
@@ -255,6 +256,14 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
     agentsMdRef.current = md;
   }, []);
 
+  // --- Abort stream ---
+  const abortStream = useCallback(() => {
+    abortRef.current = true;
+    abortControllerRef.current?.abort();
+    setIsStreaming(false);
+    setAgentStatus({ active: false, phase: '' });
+  }, []);
+
   // --- Chat management ---
 
   const createNewChat = useCallback((): string => {
@@ -281,14 +290,12 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
     (id: string) => {
       if (id === activeChatId) return;
       if (isStreaming) {
-        abortRef.current = true;
-        setIsStreaming(false);
-        setAgentStatus({ active: false, phase: '' });
+        abortStream();
       }
       setActiveChatId(id);
       saveActiveChatId(id);
     },
-    [activeChatId, isStreaming],
+    [activeChatId, isStreaming, abortStream],
   );
 
   const deleteChat = useCallback(
@@ -417,6 +424,9 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       setIsStreaming(true);
       abortRef.current = false;
 
+      // Create new AbortController for this stream
+      abortControllerRef.current = new AbortController();
+
       let apiMessages = [...updatedWithUser];
 
       try {
@@ -494,6 +504,7 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
               workspaceContextRef.current || undefined,
               hasSandboxThisRound,
               scratchpadRef.current?.content,
+              abortControllerRef.current?.signal,
             );
           });
 
@@ -700,6 +711,7 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       } finally {
         setIsStreaming(false);
         setAgentStatus({ active: false, phase: '' });
+        abortControllerRef.current = null;
       }
     },
     [activeChatId, conversations, isStreaming, createNewChat],
@@ -911,5 +923,8 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
 
     // Card actions (Phase 4)
     handleCardAction,
+
+    // Abort stream
+    abortStream,
   };
 }

@@ -68,6 +68,7 @@ function App() {
     setEnsureSandbox,
     setAgentsMd,
     handleCardAction,
+    abortStream,
   } = useChat(activeRepo?.full_name ?? null, {
     content: scratchpad.content,
     replace: scratchpad.replace,
@@ -382,7 +383,8 @@ function App() {
       {/* Input */}
       <ChatInput
         onSend={sendMessage}
-        disabled={isStreaming}
+        onStop={abortStream}
+        isStreaming={isStreaming}
         repoName={activeRepo?.name}
         onScratchpadToggle={scratchpad.toggle}
         scratchpadHasContent={scratchpad.hasContent}

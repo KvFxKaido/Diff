@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowUp, Paperclip } from 'lucide-react';
+import { ArrowUp, Paperclip, Square } from 'lucide-react';
 import { AttachmentPreview } from './AttachmentPreview';
 import { ScratchpadButton } from './ScratchpadButton';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -9,7 +9,8 @@ import type { AttachmentData } from '@/types';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: AttachmentData[]) => void;
-  disabled?: boolean;
+  onStop?: () => void;
+  isStreaming?: boolean;
   repoName?: string;
   onScratchpadToggle?: () => void;
   scratchpadHasContent?: boolean;
@@ -18,7 +19,7 @@ interface ChatInputProps {
 const ACCEPTED_FILES = 'image/*,.js,.ts,.tsx,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.md,.txt,.json,.yaml,.yml,.html,.css,.sql,.sh,.rb,.php,.swift,.kt,.scala,.vue,.svelte,.astro';
 const MAX_PAYLOAD = 400 * 1024; // 400KB total
 
-export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scratchpadHasContent }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, isStreaming, repoName, onScratchpadToggle, scratchpadHasContent }: ChatInputProps) {
   const [value, setValue] = useState('');
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -27,7 +28,7 @@ export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scra
 
   const hasAttachments = stagedAttachments.length > 0;
   const readyAttachments = stagedAttachments.filter((a) => a.status === 'ready');
-  const canSend = (value.trim().length > 0 || readyAttachments.length > 0) && !disabled;
+  const canSend = (value.trim().length > 0 || readyAttachments.length > 0) && !isStreaming;
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -81,10 +82,14 @@ export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scra
 
       if (e.key === 'Enter' && !e.shiftKey && !isMobileDevice) {
         e.preventDefault();
-        handleSend();
+        if (isStreaming) {
+          onStop?.();
+        } else {
+          handleSend();
+        }
       }
     },
-    [handleSend, isMobile],
+    [handleSend, onStop, isStreaming, isMobile],
   );
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,6 +135,14 @@ export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scra
     setStagedAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
+  const handleButtonClick = () => {
+    if (isStreaming) {
+      onStop?.();
+    } else {
+      handleSend();
+    }
+  };
+
   return (
     <div className="safe-area-bottom sticky bottom-0 z-10">
       <div className="bg-[#000]/80 backdrop-blur-xl border-t border-[#1a1a1a]">
@@ -141,64 +154,91 @@ export function ChatInput({ onSend, disabled, repoName, onScratchpadToggle, scra
           />
         )}
 
-        <div className="flex items-end gap-2 px-3 py-2.5 max-w-2xl mx-auto">
-          {/* Paperclip button */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0d0d0d] text-[#52525b] transition-colors hover:text-[#a1a1aa] active:scale-95 disabled:opacity-40"
-            aria-label="Attach file"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-
-          {/* Scratchpad button */}
-          {onScratchpadToggle && (
+        <div className="px-4 py-3">
+          <div className="relative flex items-end gap-2">
+            {/* Scratchpad button */}
             <ScratchpadButton
               onClick={onScratchpadToggle}
-              hasContent={scratchpadHasContent ?? false}
-              disabled={disabled}
+              hasContent={scratchpadHasContent}
+              disabled={isStreaming}
             />
-          )}
 
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={ACCEPTED_FILES}
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+            {/* File attachment button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming}
+              className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-200 active:scale-95 ${
+                isStreaming
+                  ? 'text-[#52525b] cursor-not-allowed'
+                  : 'text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#111]'
+              }`}
+              aria-label="Attach file"
+              title="Attach file"
+            >
+              <Paperclip className="h-5 w-5" />
+            </button>
 
-          {/* Text input */}
-          <div className="relative flex-1 rounded-2xl bg-[#0d0d0d] border border-[#1a1a1a] transition-colors duration-200 focus-within:border-[#27272a]">
-            <textarea
-              ref={textareaRef}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={repoName ? `Message about ${repoName}...` : 'Message Push...'}
-              disabled={disabled}
-              rows={1}
-              className="w-full resize-none bg-transparent px-4 py-2.5 text-[15px] text-[#fafafa] placeholder:text-[#52525b] outline-none disabled:opacity-40 leading-[22px]"
-              style={{ maxHeight: `${22 * 4 + 20}px` }}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_FILES}
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
             />
+
+            {/* Text input */}
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={repoName ? `Message #${repoName}` : 'Ask about code...'}
+                disabled={isStreaming}
+                rows={1}
+                className="w-full resize-none rounded-xl border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2.5 pr-10 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:border-[#3f3f46] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            {/* Send/Stop button */}
+            <button
+              type="button"
+              onClick={handleButtonClick}
+              disabled={!isStreaming && !canSend}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200 active:scale-95 ${
+                isStreaming
+                  ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/50'
+                  : canSend
+                  ? 'bg-[#0070f3] text-white hover:bg-[#0060d3] shadow-lg shadow-blue-500/20'
+                  : 'bg-[#1a1a1a] text-[#52525b] cursor-not-allowed'
+              }`}
+              aria-label={isStreaming ? 'Stop generating' : 'Send message'}
+              title={isStreaming ? 'Stop generating' : 'Send message'}
+            >
+              {isStreaming ? (
+                <Square className="h-4 w-4 fill-current" />
+              ) : (
+                <ArrowUp className="h-5 w-5" />
+              )}
+            </button>
           </div>
 
-          {/* Send button */}
-          <button
-            onClick={handleSend}
-            disabled={!canSend}
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
-              canSend
-                ? 'bg-[#0070f3] text-white hover:bg-[#0060d3] active:scale-95'
-                : 'bg-[#0d0d0d] text-[#52525b]'
-            }`}
-            aria-label="Send message"
-          >
-            <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
-          </button>
+          {/* Status row */}
+          {isStreaming ? (
+            <div className="mt-2 flex items-center justify-center">
+              <span className="text-xs text-[#52525b]">
+                Generating... Click stop to cancel
+              </span>
+            </div>
+          ) : readyAttachments.length > 0 ? (
+            <div className="mt-2 flex items-center justify-center">
+              <span className="text-xs text-[#52525b]">
+                {readyAttachments.length} attachment{readyAttachments.length > 1 ? 's' : ''} ready
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
