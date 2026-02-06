@@ -10,7 +10,7 @@
 import { useState, useCallback } from 'react';
 import { getSandboxDiff, execInSandbox } from '@/lib/sandbox-client';
 import { runAuditor } from '@/lib/auditor-agent';
-import { getMoonshotKey } from '@/hooks/useMoonshotKey';
+import { getActiveProvider } from '@/lib/orchestrator';
 import type { DiffPreviewCardData, AuditVerdictCardData } from '@/types';
 
 export type CommitPushPhase =
@@ -107,12 +107,12 @@ export function useCommitPush(sandboxId: string) {
       return;
     }
 
-    // Check Kimi key for Auditor
-    if (!getMoonshotKey()) {
+    // Require an active AI provider — runAuditor handles its own fail-safe
+    if (getActiveProvider() === 'demo') {
       setState((s) => ({
         ...s,
         phase: 'error',
-        error: 'Auditor requires a Kimi API key. Add one in Settings.',
+        error: 'No AI provider configured. Add an API key in Settings to enable the Auditor.',
       }));
       return;
     }
