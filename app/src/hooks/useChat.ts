@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData, AIProviderType } from '@/types';
-import { streamChat, getActiveProvider, estimateContextTokens } from '@/lib/orchestrator';
+import { streamChat, getActiveProvider, estimateContextTokens, MAX_CONTEXT_TOKENS } from '@/lib/orchestrator';
 import { detectAnyToolCall, executeAnyToolCall } from '@/lib/tool-dispatch';
 import type { AnyToolCall } from '@/lib/tool-dispatch';
 import { runCoderAgent } from '@/lib/coder-agent';
@@ -187,8 +187,7 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
   // Context usage — estimate tokens for the meter
   const contextUsage = useMemo(() => {
     const used = estimateContextTokens(messages);
-    const max = 100_000; // matches MAX_CONTEXT_TOKENS in orchestrator
-    return { used, max, percent: Math.min(100, Math.round((used / max) * 100)) };
+    return { used, max: MAX_CONTEXT_TOKENS, percent: Math.min(100, Math.round((used / MAX_CONTEXT_TOKENS) * 100)) };
   }, [messages]);
 
   // Check if this conversation has user messages (i.e., provider is locked)
@@ -438,9 +437,11 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       abortControllerRef.current = new AbortController();
 
       let apiMessages = [...updatedWithUser];
+      let lastRound = 0;
 
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          lastRound = round;
           if (abortRef.current) break;
 
           if (round > 0) {
@@ -725,6 +726,25 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
             },
             toolResultMsg,
           ];
+        }
+
+        // Handle max rounds case: add error message to user
+        if (lastRound === MAX_TOOL_ROUNDS - 1) {
+          const errorMsg: ChatMessage = {
+            id: createId(),
+            role: 'assistant',
+            content: 'The system has reached its processing limit for this request. Please try simplifying your request or breaking it into smaller steps.',
+            timestamp: Date.now(),
+            status: 'error',
+          };
+
+          setConversations((prev) => {
+            const conv = prev[chatId];
+            if (!conv) return prev;
+            const updated = { ...prev, [chatId]: { ...conv, messages: [...conv.messages, errorMsg], lastMessageAt: Date.now() } };
+            saveConversations(updated);
+            return updated;
+          });
         }
       } finally {
         setIsStreaming(false);
