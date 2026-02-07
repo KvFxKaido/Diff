@@ -1,8 +1,8 @@
 # Push
 
-Mobile-first AI coding agent with direct GitHub repo access. Chat with your codebase — review PRs, explore changes, and ship code from your phone.
+**Built for reviewing, deciding, and shipping — not typing thousands of lines on glass.**
 
-Built specifically for the AI services that include API access in their subscriptions. No per-token billing. No surprise bills. One flat monthly fee, unlimited coding agent usage.
+Push is a mobile-native AI coding agent with direct GitHub repo access. Chat with your codebase, review PRs, and orchestrate changes from anywhere. It is designed for **momentum and decision-making on the go**, giving you a manager's interface to your code when you're away from your desk.
 
 ## What It Does
 
@@ -13,16 +13,16 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 - **Tool protocol** — the agent calls GitHub's API mid-conversation (PRs, commits, diffs)
 - **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
 - **Streaming** — responses arrive token-by-token with visible thinking
-- **Demo mode** — works with mock data when no credentials are configured
+- **Demo mode** — Explore the workflow before connecting any accounts. Try the full agent experience with mock data to understand the philosophy before adding your keys.
 
 ## Who It's For
 
 Push is for developers who:
 
-- **Hate burning API credits** — Predictable monthly costs, not per-token surprises
-- **Already subscribe to AI services** — Use your existing Kimi, Mistral, or Ollama Cloud subscription (all include unlimited API access)
-- **Want mobile-native workflows** — Review and ship code from your phone, not just your IDE
-- **Like owning their tools** — Open source, self-hostable, no vendor lock-in
+- **Hate burning API credits** — Use services with predictable monthly costs, not per-token surprises
+- **Already subscribe to AI services** — Use your existing Kimi, Mistral, or Ollama Cloud subscription
+- **Want mobile-native workflows** — Designed for momentum and decision-making on the go, not replacing your IDE
+- **Like owning their tools** — Open source and architecturally self-hostable. While it uses Cloudflare and Modal by default, the codebase is designed for full control and can be self-hosted for maximum privacy.
 
 The app is free. The AI requires a subscription — but you pick which one, and you know exactly what it costs.
 
@@ -106,7 +106,7 @@ Push/
 │   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, RepoSelector
 │   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, etc.
 │   │   │   └── ui/        # shadcn/ui component library
-│   │   ├── hooks/         # useChat, useSandbox, useScratchpad, useGitHubAuth, useGitHubAppAuth, useRepos
+│   │   └── hooks/         # useChat, useSandbox, useScratchpad, useGitHubAuth, useGitHubAppAuth, useRepos
 │   │   ├── lib/           # Agent logic, tool protocols, git operations
 │   │   ├── sections/      # OnboardingScreen, ConversationScreen
 │   │   └── types/         # TypeScript definitions
