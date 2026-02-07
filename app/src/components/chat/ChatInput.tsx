@@ -212,10 +212,10 @@ export function ChatInput({ onSend, onStop, isStreaming, repoName, onScratchpadT
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={repoName ? `Message #${repoName}` : 'Ask about code...'}
+                placeholder={repoName ? `Ask about ${repoName}...` : 'Ask about code...'}
                 disabled={isStreaming}
                 rows={1}
-                className="w-full resize-none rounded-xl border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2.5 pr-10 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:border-[#3f3f46] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full resize-none rounded-xl border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2.5 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:border-[#3f3f46] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
 
