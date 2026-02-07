@@ -60,7 +60,7 @@ const MISTRAL_API_URL = import.meta.env.DEV
   : '/api/mistral/chat';
 
 // Rolling window config — keeps context focused and latency low
-const MAX_HISTORY_MESSAGES = 30;
+const MAX_HISTORY_MESSAGES = 60;
 
 // ---------------------------------------------------------------------------
 // Rolling Window — trims old messages while keeping tool call/result pairs intact
@@ -84,11 +84,15 @@ function trimToRollingWindow(messages: ChatMessage[]): ChatMessage[] {
   let count = 0;
   let i = messages.length - 1;
 
-  while (i >= 0 && count < MAX_HISTORY_MESSAGES) {
+  while (i >= 0) {
     const msg = messages[i];
 
     // If this is a tool result, we must also keep the preceding assistant message (tool call)
     if (msg.isToolResult && i > 0) {
+      // Check if adding this pair would exceed the limit
+      if (count + 2 > MAX_HISTORY_MESSAGES) {
+        break;
+      }
       const toolCall = messages[i - 1];
       // Add both: tool call first, then result
       kept.unshift(msg);
@@ -96,6 +100,9 @@ function trimToRollingWindow(messages: ChatMessage[]): ChatMessage[] {
       count += 2;
       i -= 2;
     } else {
+      if (count >= MAX_HISTORY_MESSAGES) {
+        break;
+      }
       kept.unshift(msg);
       count++;
       i--;
@@ -617,6 +624,21 @@ async function streamSSEChatOnce(
           const token = choice.delta?.content;
           if (token) {
             parser.push(token);
+            if (stallTimeoutMs) resetStallTimer();
+          }
+
+          // Handle native tool calls (Ollama may route these separately even when
+          // tools array is not sent in the request)
+          const toolCalls = choice.delta?.tool_calls;
+          if (toolCalls) {
+            for (const tc of toolCalls) {
+              const fnCall = tc.function;
+              if (fnCall?.name || fnCall?.arguments) {
+                // Convert back to text so Push's text-based tool protocol can parse it
+                const text = fnCall.arguments || '';
+                if (text) parser.push(text);
+              }
+            }
             if (stallTimeoutMs) resetStallTimer();
           }
 
