@@ -13,7 +13,7 @@ interface ChatContainerProps {
   onCardAction?: (action: CardAction) => void;
 }
 
-export function ChatContainer({ messages, agentStatus, activeRepo, onSuggestion, onCardAction }: ChatContainerProps) {
+export function ChatContainer({ messages, agentStatus, activeRepo: _activeRepo, onSuggestion: _onSuggestion, onCardAction }: ChatContainerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVigilOpen, setIsVigilOpen] = useState(false);
