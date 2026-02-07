@@ -2,6 +2,8 @@
 
 Mobile-first AI coding agent with direct GitHub repo access. Chat with your codebase — review PRs, explore changes, and ship code from your phone.
 
+Built specifically for the AI services that include API access in their subscriptions. No per-token billing. No surprise bills. One flat monthly fee, unlimited coding agent usage.
+
 ## What It Does
 
 Push is a personal chat interface backed by role-based AI agents. Select a repo, ask questions, and the agent reads your code, analyzes PRs, and shows results as inline cards — all in a streaming conversation.
@@ -17,27 +19,12 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 
 Push is for developers who:
 
-- **Already pay for an AI API** — Use your existing Kimi, Ollama, or Mistral subscription
-- **Want provider flexibility** — Not locked to one vendor; switch anytime
-- **Don't have (or want) Copilot** — Same mobile workflow, different backend
+- **Hate burning API credits** — Predictable monthly costs, not per-token surprises
+- **Already subscribe to AI services** — Use your existing Kimi, Mistral, or Ollama Cloud subscription (all include unlimited API access)
+- **Want mobile-native workflows** — Review and ship code from your phone, not just your IDE
 - **Like owning their tools** — Open source, self-hostable, no vendor lock-in
 
-The app is free. The AI isn't — but you pick who you pay.
-
-## Why Push Over Copilot?
-
-**You control the permissions.**
-
-| | GitHub Copilot | Push |
-|---|---|---|
-| Read repos | ✅ | ✅ |
-| Create PRs | ✅ | ✅ |
-| Push directly to main | ❌ Limited | ✅ Your GitHub App, your rules |
-| Token management | Microsoft-managed | Auto-refreshing GitHub App |
-| Model backend | Tiered access (GPT-4.1, 4o, Claude 4.5 Haiku on Free; rest paywalled) | Kimi, Ollama, Mistral, or bring your own |
-| Hosting | Microsoft's cloud | Your Cloudflare account (or self-hosted) |
-
-Copilot is desktop-first and IDE-bound. Push is mobile-native and repo-locked — you grant exactly the permissions you want, and the agent works within those bounds. Perfect for teams that need direct write access, custom integrations, or compliance requirements.
+The app is free. The AI requires a subscription — but you pick which one, and you know exactly what it costs.
 
 ## Tech Stack
 
@@ -46,7 +33,7 @@ Copilot is desktop-first and IDE-bound. Push is mobile-native and repo-locked �
 | Framework | React 19, TypeScript 5.9 |
 | Build | Vite 7 |
 | Styling | Tailwind CSS 3, shadcn/ui (Radix primitives) |
-| AI | Kimi For Coding, Ollama Cloud, or Mistral Vibe (user picks backend) |
+| AI | Kimi For Coding, Mistral Vibe, or Ollama Cloud — subscription-based, unlimited API |
 | Sandbox | Modal (serverless containers) |
 | Auth | GitHub App or Personal Access Token |
 | APIs | GitHub REST API |
@@ -61,12 +48,12 @@ npm install
 npm run dev
 ```
 
-Create `app/.env` for local development, or paste keys in the Settings UI at runtime:
+Create `app/.env` for local development, or paste keys in the Settings UI at runtime. Push works with AI services that include API access in their subscriptions:
 
 ```env
-VITE_MOONSHOT_API_KEY=...         # Optional — Kimi key, or paste in Settings UI (sk-kimi-...)
-VITE_OLLAMA_API_KEY=...           # Optional — Ollama Cloud key, or paste in Settings UI
-VITE_MISTRAL_API_KEY=...          # Optional — Mistral key, or paste in Settings UI
+VITE_MOONSHOT_API_KEY=...         # Kimi For Coding (unlimited API with subscription)
+VITE_MISTRAL_API_KEY=...          # Mistral Vibe (unlimited API with subscription)
+VITE_OLLAMA_API_KEY=...           # Ollama Cloud (unlimited API with subscription)
 VITE_GITHUB_TOKEN=...             # Optional — PAT for GitHub API access
 ```
 
@@ -78,7 +65,7 @@ Push supports two authentication methods:
 
 ### Option 1: GitHub App (Recommended)
 
-Install the Push GitHub App and authorize access to your repos. Tokens refresh automatically — no manual management needed.
+Install the Push GitHub App and authorize access to your repos. Tokens refresh automatically — no manual management needed. You control exactly which repos the agent can access.
 
 ### Option 2: Personal Access Token
 
@@ -110,36 +97,13 @@ Push/
 │   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, etc.
 │   │   │   └── ui/        # shadcn/ui component library
 │   │   ├── hooks/         # useChat, useSandbox, useScratchpad, useGitHubAuth, useGitHubAppAuth, useRepos
-│   │   ├── lib/           # orchestrator, tool-dispatch, scratchpad-tools, sandbox-client, coder-agent
-│   │   ├── sections/      # OnboardingScreen, RepoPicker
-│   │   ├── types/         # TypeScript type definitions
-│   │   └── App.tsx        # Screen state machine (onboarding → repo-picker → chat)
-│   ├── vite.config.ts
+│   │   ├── lib/           # Agent logic, tool protocols, git operations
+│   │   ├── sections/      # OnboardingScreen, ConversationScreen
+│   │   └── types/         # TypeScript definitions
 │   └── package.json
+└── README.md
 ```
-
-## How It Works
-
-1. **Onboard** — authenticate via GitHub App or PAT
-2. **Pick a repo** — select from your repos, search by name
-3. **Chat** — ask about PRs, recent changes, codebase structure
-4. **Tools** — the agent emits JSON tool blocks, the client executes them against GitHub's API or sandbox, injects results, and re-prompts (up to 3 rounds)
-5. **Scratchpad** — open a shared notepad to consolidate ideas; both you and the agent can read/write
-6. **Sandbox** — start a sandbox to clone the repo into a container, then run commands, edit files, and test changes
-7. **Coder** — describe a coding task and the Orchestrator delegates to the Coder agent, which works autonomously in the sandbox
-8. **Auditor** — every commit goes through the Auditor for a safety verdict (SAFE/UNSAFE) before landing
-9. **Cards** — structured results render as inline cards (terminal output, diff preview, audit verdict, PR details, etc.)
-
-## Architecture
-
-Role-based agent system. Models are replaceable; roles are not.
-
-- **Orchestrator** — conversational lead, tool orchestration, Coder delegation
-- **Coder** — autonomous code implementation in sandbox
-- **Auditor** — pre-commit safety gate, binary verdict
-
-Three AI backends are supported: **Kimi For Coding** (`api.kimi.com`), **Ollama Cloud** (`ollama.com`), and **Mistral Vibe** (`api.mistral.ai`). All use OpenAI-compatible SSE streaming. The active backend serves all three roles. API keys are configurable at runtime via the Settings UI — when 2+ are set, users pick which backend to use. Default Ollama model: `kimi-k2.5:cloud`. Default Mistral model: `devstral-small-latest`. Production uses Cloudflare Worker proxies for all backends and Modal sandbox.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT — see [LICENSE](LICENSE) for details.
