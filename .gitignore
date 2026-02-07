@@ -23,3 +23,7 @@ nul
 
 # logs
 *.log
+
+# python
+__pycache__/
+*.pyc
