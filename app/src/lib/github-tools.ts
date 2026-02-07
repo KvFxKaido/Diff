@@ -634,7 +634,6 @@ async function executeSearchFiles(repo: string, query: string, path?: string, br
   // The Search Code API does not support branch-specific search.
   // The branch parameter is currently unused (stored for potential future use).
   let searchUrl = `https://api.github.com/search/code?q=${encodeURIComponent(searchQuery)}&per_page=25`;
-  // Note: The Search Code API does not support a 'ref' parameter, so we don't append it
 
   // Use text-match media type to get text_matches in response
   const res = await githubFetch(
