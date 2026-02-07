@@ -18,7 +18,7 @@ Push is a personal chat interface backed by role-based AI agents. Users select a
 |-------|------------|
 | Frontend | React 19, TypeScript 5.9, Vite 7 |
 | Styling | Tailwind CSS 3, shadcn/ui (Radix primitives) |
-| AI | Kimi K2.5 (required), Ollama/Mistral (Orchestrator only, optional) |
+| AI | Multi-backend: Kimi K2.5, Ollama, Mistral (user picks, all roles) |
 | Backend | Cloudflare Workers (TypeScript) |
 | Sandbox | Modal (serverless Python containers) |
 | APIs | GitHub REST API |
@@ -28,13 +28,13 @@ Push is a personal chat interface backed by role-based AI agents. Users select a
 
 ### Role-Based Agent System
 
-The Orchestrator backend is user-selectable. Coder and Auditor always use Kimi K2.5 for reliable performance.
+The active backend serves all three roles. The user picks a backend in Settings; all agents use it.
 
-| Role | Backend | Model | Responsibility |
-|------|---------|-------|----------------|
-| **Orchestrator** | Kimi, Ollama, or Mistral (user picks) | k2.5, user choice, or devstral | Conversational lead, interprets intent, delegates to Coder |
-| **Coder** | Kimi (fixed) | K2.5 | Autonomous code implementation in sandbox |
-| **Auditor** | Kimi (fixed) | K2.5 | Pre-commit risk review — binary SAFE/UNSAFE verdict |
+| Role | Responsibility |
+|------|----------------|
+| **Orchestrator** | Conversational lead, interprets intent, delegates to Coder |
+| **Coder** | Autonomous code implementation in sandbox (up to 5 rounds) |
+| **Auditor** | Pre-commit risk review — binary SAFE/UNSAFE verdict (fail-safe) |
 
 ### AI Backends
 
@@ -42,19 +42,19 @@ Three providers are supported for the Orchestrator, all using OpenAI-compatible 
 
 | Provider | Endpoint | Default Model | Use Case |
 |----------|----------|---------------|----------|
-| **Kimi For Coding** | api.kimi.com | k2.5 | Primary — used by all agents |
-| **Ollama Cloud** | ollama.com | qwen2.5-coder | Orchestrator alternative |
-| **Mistral Vibe** | api.mistral.ai | devstral-small-latest | Orchestrator alternative |
+| **Kimi For Coding** | api.kimi.com | k2.5 | Default provider |
+| **Ollama Cloud** | ollama.com | gemini-3-flash-preview | Open models |
+| **Mistral Vibe** | api.mistral.ai | devstral-small-latest | Mistral models |
 
-**Coder and Auditor always use Kimi**, even when the user selects Ollama or Mistral for the Orchestrator. This ensures reliable code generation and safety reviews. A Kimi API key is required for full functionality.
+The active backend serves all three roles (Orchestrator, Coder, Auditor). Any single API key is sufficient for full functionality.
 
 API keys are configurable at runtime via Settings. When 2+ keys are set, a backend picker allows switching the Orchestrator mid-conversation. Production uses Cloudflare Worker proxies at `/api/kimi/chat`, `/api/ollama/chat`, and `/api/mistral/chat`.
 
 ### Tool Protocol
 
-Tools are prompt-engineered — the system prompt defines available tools and JSON format. The agent emits JSON tool blocks, the client executes them, injects results as synthetic messages, and re-calls the LLM (up to 3 rounds for Orchestrator, 5 for Coder).
+Tools are prompt-engineered — the system prompt defines available tools and JSON format. The agent emits JSON tool blocks, the client executes them, injects results as synthetic messages, and re-calls the LLM. Both the Orchestrator and Coder tool loops are unbounded — they continue until the model stops emitting tool calls (or the user aborts). The Coder has a 90s per-round timeout and 60KB context cap as safety nets.
 
-The Orchestrator can delegate complex coding tasks to the Coder sub-agent via the `delegate_coder` tool. The Coder runs autonomously with up to 5 rounds of tool execution, then returns results to the Orchestrator.
+The Orchestrator can delegate complex coding tasks to the Coder sub-agent via the `delegate_coder` tool. The Coder runs autonomously with its own tool loop in the sandbox, then returns results to the Orchestrator.
 
 ### Scratchpad
 
@@ -64,6 +64,10 @@ A shared notepad that both the user and AI can read/write. Content persists in l
 
 Context is trimmed to the last 30 messages before sending to the LLM. Tool call/result pairs are kept together to prevent orphaned results. This reduces latency and keeps the LLM focused on recent conversation.
 
+### Project Instructions (Two-Phase Loading)
+
+When the user selects a repo, the app fetches project instruction files via the GitHub REST API (tries `AGENTS.md`, then `CLAUDE.md` as fallback) and injects the content into the Orchestrator and Coder system prompts. When a sandbox becomes ready later, the app re-reads from the sandbox filesystem (which may have local edits) to upgrade the content. This ensures agents have project context from the first message — no sandbox required.
+
 ### Data Flow
 
 1. **Onboard** → Validate GitHub PAT
@@ -72,8 +76,8 @@ Context is trimmed to the last 30 messages before sending to the LLM. Tool call/
 4. **Tools** → JSON tool blocks → execute against GitHub API or sandbox
 5. **Scratchpad** → Shared notepad for ideas/requirements (user + AI can edit)
 6. **Sandbox** → Clone repo to container, run commands, edit files
-7. **Coder** → Autonomous coding task execution (always uses Kimi)
-8. **Auditor** → Every commit gets safety verdict (always uses Kimi)
+7. **Coder** → Autonomous coding task execution (uses active backend)
+8. **Auditor** → Every commit gets safety verdict (uses active backend)
 9. **Cards** → Structured results render as inline cards
 
 ## Directory Structure
@@ -101,8 +105,8 @@ Push/
 │   │   │   ├── scratchpad-tools.ts # Scratchpad tool definitions + security
 │   │   │   ├── sandbox-client.ts  # HTTP client for sandbox API
 │   │   │   ├── tool-dispatch.ts   # Unified tool dispatch
-│   │   │   ├── coder-agent.ts     # Coder sub-agent (always uses Kimi)
-│   │   │   ├── auditor-agent.ts   # Auditor review (always uses Kimi)
+│   │   │   ├── coder-agent.ts     # Coder sub-agent (uses active backend)
+│   │   │   ├── auditor-agent.ts   # Auditor review (uses active backend)
 │   │   │   ├── workspace-context.ts  # Active repo context builder
 │   │   │   ├── providers.ts       # AI provider config
 │   │   │   ├── prompts.ts         # System prompts
@@ -128,13 +132,13 @@ Push/
 | File | Purpose |
 |------|---------|
 | `lib/orchestrator.ts` | SSE streaming, think-token parsing, rolling window context |
-| `lib/github-tools.ts` | GitHub tool protocol, `delegate_coder` function |
+| `lib/github-tools.ts` | GitHub tool protocol, `delegate_coder`, `fetchProjectInstructions` |
 | `lib/sandbox-tools.ts` | Sandbox tool definitions |
 | `lib/scratchpad-tools.ts` | Scratchpad tools, prompt injection escaping |
 | `lib/sandbox-client.ts` | HTTP client for `/api/sandbox/*` endpoints |
 | `lib/tool-dispatch.ts` | Unified dispatch for all tools |
-| `lib/coder-agent.ts` | Coder autonomous loop — **always uses Kimi K2.5** |
-| `lib/auditor-agent.ts` | Auditor review + verdict — **always uses Kimi K2.5** |
+| `lib/coder-agent.ts` | Coder autonomous loop (uses active backend) |
+| `lib/auditor-agent.ts` | Auditor review + verdict (fail-safe, uses active backend) |
 | `lib/workspace-context.ts` | Active repo context builder |
 | `lib/providers.ts` | AI provider config (Orchestrator only) |
 
@@ -190,10 +194,8 @@ Push/
 ### Local Development (app/.env)
 
 ```env
-# Required for Coder and Auditor agents
-VITE_MOONSHOT_API_KEY=...         # Kimi API key (required for full functionality)
-
-# Optional — for Orchestrator backend switching
+# At least one AI key is needed (any provider works for all roles)
+VITE_MOONSHOT_API_KEY=...         # Kimi API key
 VITE_OLLAMA_API_KEY=...           # Ollama Cloud API key
 VITE_MISTRAL_API_KEY=...          # Mistral API key
 
@@ -237,7 +239,7 @@ cd sandbox && python -m modal deploy app.py
 
 ## Demo Mode
 
-Without a Kimi API key, the app runs in demo mode with mock repos and welcome message. Coding features (Coder agent, Auditor, sandbox) require Kimi. This is the escape hatch for quick UI testing.
+Without any API key, the app runs in demo mode with mock repos and welcome message. Full functionality (Coder, Auditor, sandbox) requires at least one AI provider key. This is the escape hatch for quick UI testing.
 
 ## Design Principles
 
@@ -289,9 +291,9 @@ Without a Kimi API key, the app runs in demo mode with mock repos and welcome me
 
 | Service | Purpose | Endpoint |
 |---------|---------|----------|
-| Kimi For Coding | AI completions (all agents) | api.kimi.com |
-| Ollama Cloud | Orchestrator alternative | ollama.com |
-| Mistral Vibe | Orchestrator alternative | api.mistral.ai |
+| Kimi For Coding | AI completions (all roles) | api.kimi.com |
+| Ollama Cloud | AI completions (all roles) | ollama.com |
+| Mistral Vibe | AI completions (all roles) | api.mistral.ai |
 | GitHub API | Repo operations | api.github.com |
 | Modal | Sandbox containers | `{base}-{function}.modal.run` |
 

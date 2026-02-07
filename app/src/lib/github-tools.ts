@@ -878,6 +878,41 @@ async function executeListCommitFiles(repo: string, ref: string): Promise<ToolEx
   return { text: lines.join('\n'), card: { type: 'commit-files', data: cardData } };
 }
 
+/**
+ * Fetch project instruction files from a GitHub repo via the REST API.
+ * Tries AGENTS.md first, then CLAUDE.md as fallback.
+ * Returns content + filename, or null if neither file exists.
+ */
+export async function fetchProjectInstructions(
+  repo: string,
+  branch?: string,
+): Promise<{ content: string; filename: string } | null> {
+  const FILES_TO_TRY = ['AGENTS.md', 'CLAUDE.md'];
+  const headers = getGitHubHeaders();
+
+  for (const filename of FILES_TO_TRY) {
+    try {
+      const ref = branch ? `?ref=${encodeURIComponent(branch)}` : '';
+      const res = await githubFetch(
+        `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(filename)}${ref}`,
+        { headers },
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.type !== 'file' || !data.content) continue;
+
+      let content = atob(data.content.replace(/\n/g, ''));
+      if (content.length > 5_000) {
+        content = content.slice(0, 5_000) + '\n\n[...truncated at 5K chars]';
+      }
+      return { content, filename };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 function normalizeRepoName(repo: string): string {
   return repo
     .trim()

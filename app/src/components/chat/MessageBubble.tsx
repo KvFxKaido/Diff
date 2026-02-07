@@ -265,12 +265,12 @@ export const MessageBubble = memo(function MessageBubble({
     [message.content],
   );
 
-  // Hide tool result messages — they now live in the VIGIL drawer
+  // Hide tool result messages — they now live in the Console drawer
   if (message.isToolResult || (message.role as string) === 'tool') {
     return null;
   }
 
-  // Hide tool call messages — they now live in the VIGIL drawer
+  // Hide tool call messages — they now live in the Console drawer
   if (message.isToolCall) {
     return null;
   }

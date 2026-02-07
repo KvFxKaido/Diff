@@ -15,6 +15,7 @@ import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
 import { readFromSandbox } from '@/lib/sandbox-client';
+import { fetchProjectInstructions } from '@/lib/github-tools';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { RepoAndChatSelector } from '@/components/chat/RepoAndChatSelector';
@@ -49,6 +50,7 @@ const PROVIDER_ICONS: Record<AIProviderType, string> = {
 function App() {
   const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
   const scratchpad = useScratchpad(activeRepo?.full_name ?? null);
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const {
     messages,
     sendMessage,
@@ -173,33 +175,56 @@ function App() {
     setIsDemo(false);
   }, [appDisconnect, patLogout, clearActiveRepo, deleteAllChats]);
 
-  // --- AGENTS.md: read from sandbox when ready ---
+  // --- Project instructions: two-phase loading ---
+  // Phase A: Fetch via GitHub API immediately when activeRepo changes (no sandbox needed)
+  // Phase B: Upgrade from sandbox filesystem when sandbox becomes ready (may have local edits)
 
   const [agentsMdContent, setAgentsMdContent] = useState<string | null>(null);
 
+  // Phase A — GitHub API fetch (immediate)
   useEffect(() => {
-    if (sandbox.status !== 'ready' || !sandbox.sandboxId) {
+    if (!activeRepo) {
       setAgentsMdContent(null);
       setAgentsMd(null);
       return;
     }
-    readFromSandbox(sandbox.sandboxId, '/workspace/AGENTS.md')
+    let cancelled = false;
+    fetchProjectInstructions(activeRepo.full_name)
       .then((result) => {
-        setAgentsMdContent(result.content);
-        setAgentsMd(result.content); // Coder path
+        if (cancelled) return;
+        setAgentsMdContent(result?.content ?? null);
+        setAgentsMd(result?.content ?? null);
       })
       .catch(() => {
+        if (cancelled) return;
         setAgentsMdContent(null);
         setAgentsMd(null);
       });
+    return () => { cancelled = true; };
+  }, [activeRepo, setAgentsMd]);
+
+  // Phase B — Sandbox upgrade (overrides Phase A when sandbox is ready)
+  useEffect(() => {
+    if (sandbox.status !== 'ready' || !sandbox.sandboxId) return;
+    let cancelled = false;
+    readFromSandbox(sandbox.sandboxId, '/workspace/AGENTS.md')
+      .then((result) => {
+        if (cancelled) return;
+        setAgentsMdContent(result.content);
+        setAgentsMd(result.content);
+      })
+      .catch(() => {
+        // Sandbox read failed — keep Phase A content, don't clear
+      });
+    return () => { cancelled = true; };
   }, [sandbox.status, sandbox.sandboxId, setAgentsMd]);
 
-  // Build workspace context when repos, active repo, or AGENTS.md change
+  // Build workspace context when repos, active repo, or project instructions change
   useEffect(() => {
     if (repos.length > 0) {
       let ctx = buildWorkspaceContext(repos, activeRepo);
       if (agentsMdContent) {
-        ctx += '\n\nAGENTS.MD — Project instructions from the repository:\n' + agentsMdContent;
+        ctx += '\n\nProject instructions from the repository:\n' + agentsMdContent;
       }
       setWorkspaceContext(ctx);
     } else {
@@ -379,6 +404,8 @@ function App() {
         activeRepo={activeRepo}
         onSuggestion={sendMessage}
         onCardAction={handleCardAction}
+        isConsoleOpen={isConsoleOpen}
+        onConsoleClose={() => setIsConsoleOpen(false)}
       />
 
       {/* Input */}
@@ -389,6 +416,8 @@ function App() {
         repoName={activeRepo?.name}
         onScratchpadToggle={scratchpad.toggle}
         scratchpadHasContent={scratchpad.hasContent}
+        onConsoleToggle={() => setIsConsoleOpen(o => !o)}
+        agentActive={agentStatus.active}
         contextUsage={contextUsage}
       />
 

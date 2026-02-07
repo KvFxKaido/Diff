@@ -39,7 +39,7 @@ export function ActivityDrawer({ isOpen, onClose, messages }: ActivityDrawerProp
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a1a1a] bg-[#0a0a0a] rounded-t-2xl md:rounded-none">
           <div className="flex items-center gap-2">
             <TerminalSquare className="h-4 w-4 text-[#0070f3]" />
-            <h2 className="text-[11px] font-bold uppercase tracking-widest text-[#52525b]">Vigil Output</h2>
+            <h2 className="text-[11px] font-bold uppercase tracking-widest text-[#52525b]">Console</h2>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-[#1a1a1a] rounded-lg"><X className="h-4 w-4 text-[#52525b]" /></button>
         </div>
