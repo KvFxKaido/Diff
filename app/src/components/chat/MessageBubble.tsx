@@ -58,6 +58,11 @@ function ThinkingBlock({ thinking, isStreaming }: { thinking: string; isStreamin
 export const MessageBubble = memo(({ message, onCardAction }: MessageBubbleProps) => {
   const isAssistant = message.role === 'assistant';
   if ((message.role as string) === 'tool') return null; // VIGIL Filter
+  
+  // Filter out internal tool result markers that might be passed as regular messages
+  if (message.content?.startsWith('[TOOL_RESULT') || message.content?.startsWith('[Tool Result')) {
+    return null;
+  }
 
   return (
     <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} mb-4 px-4`}>
