@@ -163,15 +163,27 @@ function manageContext(messages: ChatMessage[]): ChatMessage[] {
     kept.push(result[firstUserIdx]);
   }
 
-  // Walk from oldest, skip messages until we're under budget
+  // Walk from oldest, skip messages until we're under budget.
+  // Tool call/result pairs are atomic — drop or keep both together.
   let dropping = true;
   for (let i = 0; i < result.length; i++) {
     if (i === firstUserIdx) continue; // Already added
 
     if (dropping) {
-      const msgTokens = estimateMessageTokens(result[i]);
-      // If this is a tool result, also account for its tool call pair
-      droppedTokens += msgTokens;
+      // If this is a tool call followed by a tool result, handle as a pair
+      const isToolCallPair = result[i].isToolCall && i + 1 < result.length && result[i + 1]?.isToolResult;
+      const isToolResultOfPair = result[i].isToolResult && i > 0 && result[i - 1]?.isToolCall;
+
+      // Skip tool results that are part of a pair we already dropped
+      if (isToolResultOfPair) continue;
+
+      // Drop the pair together
+      const pairTokens = isToolCallPair
+        ? estimateMessageTokens(result[i]) + estimateMessageTokens(result[i + 1])
+        : estimateMessageTokens(result[i]);
+
+      droppedTokens += pairTokens;
+      if (isToolCallPair) i++; // skip the result too
 
       if (currentTokens - droppedTokens <= MAX_CONTEXT_TOKENS * SUMMARIZE_THRESHOLD) {
         dropping = false;
