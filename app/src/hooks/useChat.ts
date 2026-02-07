@@ -21,7 +21,7 @@ function generateTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return 'New Chat';
   const content = firstUser.content.trim();
-  return content.length > 30 ? content.slice(0, 30) + '…' : content;
+  return content.length > 30 ? content.slice(0, 30) + '...' : content;
 }
 
 // --- localStorage helpers ---
