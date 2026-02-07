@@ -31,6 +31,7 @@ function formatContent(content: string): React.ReactNode[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    // --- Fenced code blocks ---
     if (line.startsWith('```')) {
       if (inCodeBlock) {
         const fullCode = codeLines.join('\n');
@@ -60,16 +61,101 @@ function formatContent(content: string): React.ReactNode[] {
       continue;
     }
 
-    // Render regular line with inline formatting
+    // --- Horizontal rule (---, ***, ___) ---
+    if (/^(\s*[-*_]\s*){3,}$/.test(line) && line.trim().length >= 3) {
+      parts.push(
+        <hr key={`hr-${i}`} className="my-3 border-0 border-t border-[#1a1a1a]" />,
+      );
+      continue;
+    }
+
+    // --- Headings ---
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const headingText = headingMatch[2];
+      const styles: Record<number, string> = {
+        1: 'text-[18px] font-semibold text-[#fafafa] mt-4 mb-1.5',
+        2: 'text-[16px] font-semibold text-[#fafafa] mt-3 mb-1',
+        3: 'text-[15px] font-medium text-[#e4e4e7] mt-2.5 mb-0.5',
+        4: 'text-[14px] font-medium text-[#a1a1aa] mt-2 mb-0.5 uppercase tracking-wide',
+      };
+      parts.push(
+        <div key={`heading-${i}`} className={styles[level]}>
+          {formatInline(headingText)}
+        </div>,
+      );
+      continue;
+    }
+
+    // --- Blockquote ---
+    if (line.startsWith('> ') || line === '>') {
+      const quoteText = line.startsWith('> ') ? line.slice(2) : '';
+      parts.push(
+        <div
+          key={`bq-${i}`}
+          className="border-l-2 border-[#27272a] pl-3 my-1 text-[#a1a1aa] italic"
+        >
+          {quoteText ? formatInline(quoteText) : '\u00A0'}
+        </div>,
+      );
+      continue;
+    }
+
+    // --- Unordered list item (- or *) ---
+    const ulMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+    if (ulMatch) {
+      const indent = Math.min(Math.floor(ulMatch[1].length / 2), 3);
+      const itemText = ulMatch[2];
+      parts.push(
+        <div
+          key={`ul-${i}`}
+          className="flex items-start gap-2 my-0.5"
+          style={{ paddingLeft: `${indent * 16 + 4}px` }}
+        >
+          <span className="shrink-0 mt-[9px] block w-1 h-1 rounded-full bg-[#52525b]" />
+          <span className="flex-1 min-w-0">{formatInline(itemText)}</span>
+        </div>,
+      );
+      continue;
+    }
+
+    // --- Ordered list item (1. 2. etc.) ---
+    const olMatch = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
+    if (olMatch) {
+      const indent = Math.min(Math.floor(olMatch[1].length / 2), 3);
+      const num = olMatch[2];
+      const itemText = olMatch[3];
+      parts.push(
+        <div
+          key={`ol-${i}`}
+          className="flex items-start gap-2 my-0.5"
+          style={{ paddingLeft: `${indent * 16 + 4}px` }}
+        >
+          <span className="text-[#52525b] text-[13px] font-mono shrink-0 min-w-[1.25rem] text-right mt-px">
+            {num}.
+          </span>
+          <span className="flex-1 min-w-0">{formatInline(itemText)}</span>
+        </div>,
+      );
+      continue;
+    }
+
+    // --- Empty line ---
+    if (line.trim() === '') {
+      parts.push(<div key={`empty-${i}`} className="h-2" />);
+      continue;
+    }
+
+    // --- Default: plain text line ---
     parts.push(
-      <span key={`line-${i}`}>
-        {i > 0 && !inCodeBlock && <br />}
+      <div key={`line-${i}`}>
         {formatInline(line)}
-      </span>,
+      </div>,
     );
   }
 
-  // Handle unclosed code blocks
+  // Handle unclosed code blocks (streaming)
   if (inCodeBlock && codeLines.length > 0) {
     const fullCode = codeLines.join('\n');
     if (!isToolCallJson(fullCode)) {
@@ -91,31 +177,54 @@ function formatContent(content: string): React.ReactNode[] {
 
 function formatInline(text: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
-  // Match bold (**text**), inline code (`text`), and plain text
-  const regex = /(\*\*(.+?)\*\*)|(`([^`]+?)`)|([^*`]+)/g;
+  // Match bold, italic, inline code, links, and plain text
+  // Bold before italic so ** is tried before *
+  const regex =
+    /(\*\*(.+?)\*\*)|(\*([^*]+?)\*)|(`([^`]+?)`)|(\[([^\]]+)\]\(([^)]+)\))|([^*`\[]+|[*`\[])/g;
   let match;
   let key = 0;
 
   while ((match = regex.exec(text)) !== null) {
     if (match[2]) {
-      // Bold
+      // Bold **text**
       result.push(
         <strong key={key++} className="font-semibold text-[#fafafa]">
           {match[2]}
         </strong>,
       );
     } else if (match[4]) {
-      // Inline code
+      // Italic *text*
+      result.push(
+        <em key={key++} className="italic text-[#d4d4d8]">
+          {match[4]}
+        </em>,
+      );
+    } else if (match[6]) {
+      // Inline code `text`
       result.push(
         <code
           key={key++}
           className="font-mono text-[13px] bg-[#0d0d0d] border border-[#1a1a1a] rounded px-1.5 py-0.5 text-[#e4e4e7]"
         >
-          {match[4]}
+          {match[6]}
         </code>,
       );
-    } else if (match[5]) {
-      result.push(<span key={key++}>{match[5]}</span>);
+    } else if (match[8]) {
+      // Link [text](url)
+      result.push(
+        <a
+          key={key++}
+          href={match[9]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#0070f3] hover:text-[#3291ff] underline underline-offset-2 decoration-[#0070f3]/30 hover:decoration-[#3291ff]/50 transition-colors"
+        >
+          {match[8]}
+        </a>,
+      );
+    } else if (match[10]) {
+      // Plain text
+      result.push(<span key={key++}>{match[10]}</span>);
     }
   }
 
