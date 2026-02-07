@@ -438,9 +438,11 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       abortControllerRef.current = new AbortController();
 
       let apiMessages = [...updatedWithUser];
+      let lastRound = 0;
 
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          lastRound = round;
           if (abortRef.current) break;
 
           if (round > 0) {
@@ -725,6 +727,25 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
             },
             toolResultMsg,
           ];
+        }
+
+        // Handle max rounds case: add error message to user
+        if (lastRound === MAX_TOOL_ROUNDS - 1) {
+          const errorMsg: ChatMessage = {
+            id: createId(),
+            role: 'assistant',
+            content: 'The system has reached its processing limit for this request. Please try simplifying your request or breaking it into smaller steps.',
+            timestamp: Date.now(),
+            status: 'error',
+          };
+
+          setConversations((prev) => {
+            const conv = prev[chatId];
+            if (!conv) return prev;
+            const updated = { ...prev, [chatId]: { ...conv, messages: [...conv.messages, errorMsg], lastMessageAt: Date.now() } };
+            saveConversations(updated);
+            return updated;
+          });
         }
       } finally {
         setIsStreaming(false);
