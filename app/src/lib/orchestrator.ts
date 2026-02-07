@@ -11,9 +11,29 @@ import { getOllamaModelName, getMistralModelName, getPreferredProvider } from '.
 // ---------------------------------------------------------------------------
 
 interface StreamUsage {
+// Chunk metadata for tracking streaming progress
+export interface ChunkMetadata {
+  chunkIndex: number;
+}
   inputTokens: number;
+// Chunk metadata for tracking streaming progress
+export interface ChunkMetadata {
+  chunkIndex: number;
+}
   outputTokens: number;
+// Chunk metadata for tracking streaming progress
+export interface ChunkMetadata {
+  chunkIndex: number;
+}
   totalTokens: number;
+// Chunk metadata for tracking streaming progress
+export interface ChunkMetadata {
+  chunkIndex: number;
+}
+}
+// Chunk metadata for tracking streaming progress
+export interface ChunkMetadata {
+  chunkIndex: number;
 }
 
 
@@ -219,7 +239,7 @@ interface ThinkTokenParser {
 }
 
 function createThinkTokenParser(
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onThinkingToken?: (token: string | null) => void,
 ): ThinkTokenParser {
   let insideThink = false;
@@ -296,7 +316,7 @@ interface ChunkedEmitter {
  * dramatically improving performance on slower mobile devices.
  */
 function createChunkedEmitter(
-  emit: (chunk: string) => void,
+  emit: (chunk: string, meta?: ChunkMetadata) => void,
   options?: { minChunkSize?: number; flushIntervalMs?: number },
 ): ChunkedEmitter {
   const MIN_CHUNK_SIZE = options?.minChunkSize ?? 4;  // Min chars before emitting
@@ -304,10 +324,12 @@ function createChunkedEmitter(
 
   let buffer = '';
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  let chunkIndex = 0;
 
   const doEmit = () => {
     if (buffer) {
-      emit(buffer);
+      chunkIndex++;
+      emit(buffer, { chunkIndex });
       buffer = '';
     }
     if (flushTimer) {
@@ -384,7 +406,7 @@ interface AutoRetryConfig {
 async function streamSSEChat(
   config: StreamProviderConfig,
   messages: ChatMessage[],
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onDone: (usage?: StreamUsage) => void,
   onError: (error: Error) => void,
   onThinkingToken?: (token: string | null) => void,
@@ -434,7 +456,7 @@ async function streamSSEChat(
 async function streamSSEChatOnce(
   config: StreamProviderConfig,
   messages: ChatMessage[],
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onDone: (usage?: StreamUsage) => void,
   onError: (error: Error) => void,
   onThinkingToken?: (token: string | null) => void,
@@ -663,7 +685,7 @@ async function streamSSEChatOnce(
 
 export async function streamMoonshotChat(
   messages: ChatMessage[],
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onDone: (usage?: StreamUsage) => void,
   onError: (error: Error) => void,
   onThinkingToken?: (token: string | null) => void,
@@ -716,7 +738,7 @@ export async function streamMoonshotChat(
 
 export async function streamOllamaChat(
   messages: ChatMessage[],
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onDone: (usage?: StreamUsage) => void,
   onError: (error: Error) => void,
   onThinkingToken?: (token: string | null) => void,
@@ -774,7 +796,7 @@ export async function streamOllamaChat(
 
 export async function streamMistralChat(
   messages: ChatMessage[],
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onDone: (usage?: StreamUsage) => void,
   onError: (error: Error) => void,
   onThinkingToken?: (token: string | null) => void,
@@ -871,7 +893,7 @@ export function getProviderStreamFn(provider: ActiveProvider) {
 
 export async function streamChat(
   messages: ChatMessage[],
-  onToken: (token: string) => void,
+  onToken: (token: string, meta?: ChunkMetadata) => void,
   onDone: (usage?: StreamUsage) => void,
   onError: (error: Error) => void,
   onThinkingToken?: (token: string | null) => void,
@@ -885,9 +907,11 @@ export async function streamChat(
   // Demo mode: no API keys in dev → show welcome message
   if (provider === 'demo' && import.meta.env.DEV) {
     const words = DEMO_WELCOME.split(' ');
+    let chunkIndex = 0;
     for (let i = 0; i < words.length; i++) {
+      chunkIndex++;
       await new Promise((r) => setTimeout(r, 12));
-      onToken(words[i] + (i < words.length - 1 ? ' ' : ''));
+      onToken(words[i] + (i < words.length - 1 ? ' ' : ''), { chunkIndex });
     }
     onDone();
     return;
