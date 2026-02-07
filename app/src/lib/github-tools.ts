@@ -282,7 +282,6 @@ async function executeFetchPR(repo: string, pr: number): Promise<ToolExecutionRe
   } catch {
     // Ignore errors for branch commits
   }
-  const prData = await prRes.json();
 
   // Fetch diff
   const diffRes = await githubFetch(`https://api.github.com/repos/${repo}/pulls/${pr}`, {
