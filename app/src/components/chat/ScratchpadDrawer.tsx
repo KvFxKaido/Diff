@@ -4,8 +4,8 @@
  * Desktop: slides from the right (320px wide)
  * Mobile: slides from bottom (60% viewport height)
  *
- * Both user and Kimi can edit. User edits directly,
- * Kimi edits via set_scratchpad / append_scratchpad tools.
+ * Both user and the agent can edit. User edits directly,
+ * the agent edits via set_scratchpad / append_scratchpad tools.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -225,13 +225,13 @@ export function ScratchpadDrawer({
             ref={textareaRef}
             value={content}
             onChange={(e) => onContentChange(e.target.value)}
-            placeholder="Shared notes between you and Kimi...
+            placeholder="Shared notes between you and the agent...
 
 • Paste code, errors, requirements
-• Ask Kimi to add ideas here
+• Ask the agent to add ideas here
 • Reference in conversation
 
-Kimi sees this in every message."
+The agent sees this in every message."
             className="h-full w-full resize-none bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl px-4 py-3 text-sm text-[#fafafa] placeholder:text-[#52525b] outline-none focus:border-[#27272a] font-mono leading-relaxed"
           />
         </div>
@@ -239,7 +239,7 @@ Kimi sees this in every message."
         {/* Footer hint */}
         <div className="px-4 py-2 border-t border-[#1a1a1a] shrink-0">
           <p className="text-xs text-[#52525b]">
-            Kimi can update this via <code className="text-[#71717a]">set_scratchpad</code> or <code className="text-[#71717a]">append_scratchpad</code>
+            The agent can update this via <code className="text-[#71717a]">set_scratchpad</code> or <code className="text-[#71717a]">append_scratchpad</code>
           </p>
         </div>
       </div>
