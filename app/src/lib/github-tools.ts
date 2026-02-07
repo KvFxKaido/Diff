@@ -632,7 +632,7 @@ async function executeSearchFiles(repo: string, query: string, path?: string, br
 
   // GitHub code search primarily indexes the default branch.
   // The Search Code API does not support branch-specific search.
-  // The branch parameter is currently unused (stored for potential future use).
+  // The branch parameter is accepted in the function signature for potential future use.
   let searchUrl = `https://api.github.com/search/code?q=${encodeURIComponent(searchQuery)}&per_page=25`;
 
   // Use text-match media type to get text_matches in response
