@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData, AIProviderType } from '@/types';
-import { streamChat, getActiveProvider } from '@/lib/orchestrator';
+import { streamChat, getActiveProvider, estimateContextTokens } from '@/lib/orchestrator';
 import { detectAnyToolCall, executeAnyToolCall } from '@/lib/tool-dispatch';
 import type { AnyToolCall } from '@/lib/tool-dispatch';
 import { runCoderAgent } from '@/lib/coder-agent';
@@ -12,6 +12,7 @@ const CONVERSATIONS_KEY = 'diff_conversations';
 const ACTIVE_CHAT_KEY = 'diff_active_chat';
 const OLD_STORAGE_KEY = 'diff_chat_history';
 const ACTIVE_REPO_KEY = 'active_repo';
+const MAX_TOOL_ROUNDS = 15;
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -21,7 +22,7 @@ function generateTitle(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser) return 'New Chat';
   const content = firstUser.content.trim();
-  return content.length > 30 ? content.slice(0, 30) + '…' : content;
+  return content.length > 30 ? content.slice(0, 30) + '...' : content;
 }
 
 // --- localStorage helpers ---
@@ -182,6 +183,13 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
   // Derived state
   const messages = conversations[activeChatId]?.messages || [];
   const conversationProvider = conversations[activeChatId]?.provider;
+
+  // Context usage — estimate tokens for the meter
+  const contextUsage = useMemo(() => {
+    const used = estimateContextTokens(messages);
+    const max = 100_000; // matches MAX_CONTEXT_TOKENS in orchestrator
+    return { used, max, percent: Math.min(100, Math.round((used / max) * 100)) };
+  }, [messages]);
 
   // Check if this conversation has user messages (i.e., provider is locked)
   // Provider is locked if: we have a stored provider, OR there are user messages (legacy chats)
@@ -432,7 +440,7 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
       let apiMessages = [...updatedWithUser];
 
       try {
-        for (let round = 0; ; round++) {
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           if (abortRef.current) break;
 
           if (round > 0) {
@@ -933,6 +941,9 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
 
     // Card actions (Phase 4)
     handleCardAction,
+
+    // Context usage (for meter UI)
+    contextUsage,
 
     // Abort stream
     abortStream,
