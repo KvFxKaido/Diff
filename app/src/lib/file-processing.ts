@@ -173,7 +173,12 @@ function isCodeFile(filename: string): boolean {
  * Get total size of attachments in bytes.
  */
 export function getTotalAttachmentSize(attachments: AttachmentData[]): number {
-  return attachments.reduce((sum, a) => sum + a.content.length, 0);
+  return attachments.reduce((sum, attachment) => {
+    const contentLength = attachment.content.length;
+    const fallbackBytes = attachment.sizeBytes ?? 0;
+    const size = contentLength > 0 ? contentLength : fallbackBytes;
+    return sum + size;
+  }, 0);
 }
 
 /**
