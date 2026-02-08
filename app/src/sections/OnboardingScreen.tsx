@@ -35,8 +35,9 @@ export function OnboardingScreen({
   };
 
   const handleConnectInstallation = async () => {
-    if (!installationId.trim() || loading) return;
-    const success = await onConnectInstallationId(installationId.trim());
+    const normalized = installationId.replace(/\D/g, '');
+    if (!normalized || loading) return;
+    const success = await onConnectInstallationId(normalized);
     if (success) {
       setInstallationId('');
       setShowInstallIdInput(false);
@@ -133,7 +134,7 @@ export function OnboardingScreen({
                 type="text"
                 placeholder="Installation ID (numbers only)"
                 value={installationId}
-                onChange={(e) => setInstallationId(e.target.value)}
+                onChange={(e) => setInstallationId(e.target.value.replace(/\D/g, ''))}
                 onKeyDown={(e) => e.key === 'Enter' && handleConnectInstallation()}
                 disabled={loading}
                 className="w-full rounded-xl border border-[#1a1a1a] bg-[#0d0d0d] px-4 py-3 text-sm text-[#fafafa] font-mono placeholder:text-[#3f3f46] outline-none transition-colors duration-200 focus:border-[#0070f3]/50 disabled:opacity-50"
@@ -142,7 +143,7 @@ export function OnboardingScreen({
 
               <button
                 onClick={handleConnectInstallation}
-                disabled={!installationId.trim() || loading}
+                disabled={!installationId.replace(/\D/g, '') || loading}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0070f3] px-4 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-[#0060d3] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
               >
                 {loading ? (
@@ -167,6 +168,12 @@ export function OnboardingScreen({
                 <br />
                 Find it at <code className="text-[#71717a] font-mono">github.com/settings/installations</code>.
               </p>
+
+              {error && (
+                <p className="text-xs text-red-400 text-center leading-relaxed">
+                  {error}
+                </p>
+              )}
             </>
           ) : (
             <>

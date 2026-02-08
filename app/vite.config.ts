@@ -4,6 +4,8 @@ import { defineConfig } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // https://vite.dev/config/
+const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8787';
+
 export default defineConfig({
   base: './',
   plugins: [inspectAttr(), react()],
@@ -32,6 +34,10 @@ export default defineConfig({
         target: 'https://api.mistral.ai',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/mistral/, ''),
+      },
+      '/api': {
+        target: API_PROXY_TARGET,
+        changeOrigin: true,
       },
     },
   },

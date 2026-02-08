@@ -48,8 +48,19 @@ async function fetchAppToken(installationId: string): Promise<TokenResponse> {
   });
 
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    const rawError = typeof data.error === 'string' ? data.error : '';
+    const rawBody = await res.text().catch(() => '');
+    let rawError = '';
+    try {
+      const data = JSON.parse(rawBody) as { error?: unknown; details?: unknown };
+      if (typeof data.error === 'string' && data.error.trim()) {
+        rawError = data.error;
+      } else if (typeof data.details === 'string' && data.details.trim()) {
+        rawError = data.details;
+      }
+    } catch {
+      // Non-JSON error body (e.g. proxy/runtime HTML)
+      rawError = rawBody.slice(0, 300);
+    }
     throw new Error(formatAppTokenError(res.status, rawError));
   }
 
