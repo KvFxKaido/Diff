@@ -18,6 +18,9 @@ interface Env {
   GITHUB_APP_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
   GITHUB_ALLOWED_INSTALLATION_IDS?: string;
+  // GitHub App OAuth (for auto-connect flow)
+  GITHUB_APP_CLIENT_ID?: string;
+  GITHUB_APP_CLIENT_SECRET?: string;
 }
 
 const MAX_BODY_SIZE_BYTES = 512 * 1024; // 512KB — supports file uploads via sandbox write
@@ -50,6 +53,11 @@ export default {
     // API route: GitHub App token exchange
     if (url.pathname === '/api/github/app-token' && request.method === 'POST') {
       return handleGitHubAppToken(request, env);
+    }
+
+    // API route: GitHub App OAuth auto-connect (code → user token → find installation → installation token)
+    if (url.pathname === '/api/github/app-oauth' && request.method === 'POST') {
+      return handleGitHubAppOAuth(request, env);
     }
 
     // API route: streaming proxy to Kimi For Coding (SSE)
@@ -371,6 +379,7 @@ interface HealthStatus {
     mistral: { status: 'ok' | 'unconfigured'; configured: boolean };
     sandbox: { status: 'ok' | 'unconfigured' | 'misconfigured'; configured: boolean; error?: string };
     github_app: { status: 'ok' | 'unconfigured'; configured: boolean };
+    github_app_oauth: { status: 'ok' | 'unconfigured'; configured: boolean };
   };
   version: string;
 }
@@ -411,6 +420,7 @@ async function handleHealthCheck(env: Env): Promise<Response> {
       mistral: { status: mistralConfigured ? 'ok' : 'unconfigured', configured: mistralConfigured },
       sandbox: { status: sandboxStatus, configured: Boolean(sandboxUrl), error: sandboxError },
       github_app: { status: env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY ? 'ok' : 'unconfigured', configured: Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) },
+      github_app_oauth: { status: env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET ? 'ok' : 'unconfigured', configured: Boolean(env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET) },
     },
     version: '1.0.0',
   };
@@ -699,6 +709,131 @@ async function handleMistralChat(request: Request, env: Env): Promise<Response> 
   }
 }
 
+// --- GitHub App OAuth auto-connect ---
+
+async function handleGitHubAppOAuth(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+
+  if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET) {
+    return Response.json({ error: 'GitHub App OAuth not configured' }, { status: 500 });
+  }
+
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
+    return Response.json({ error: 'GitHub App not configured (needed for installation token)' }, { status: 500 });
+  }
+
+  const bodyResult = await readBodyText(request, 4096);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+
+  let payload: { code?: string };
+  try {
+    payload = JSON.parse(bodyResult.text);
+  } catch {
+    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const code = payload.code;
+  if (!code || typeof code !== 'string') {
+    return Response.json({ error: 'Missing code' }, { status: 400 });
+  }
+
+  try {
+    // Step 1: Exchange OAuth code for user access token
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: env.GITHUB_APP_CLIENT_ID,
+        client_secret: env.GITHUB_APP_CLIENT_SECRET,
+        code,
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      const errBody = await tokenRes.text().catch(() => '');
+      console.error('[github/app-oauth] Token exchange failed:', tokenRes.status, errBody.slice(0, 300));
+      return Response.json({ error: `GitHub OAuth token exchange failed (${tokenRes.status})` }, { status: 502 });
+    }
+
+    const tokenData = await tokenRes.json() as { access_token?: string; error?: string; error_description?: string };
+    if (tokenData.error || !tokenData.access_token) {
+      console.error('[github/app-oauth] OAuth error:', tokenData.error, tokenData.error_description);
+      return Response.json({
+        error: tokenData.error_description || tokenData.error || 'OAuth token exchange failed',
+      }, { status: 400 });
+    }
+
+    const userToken = tokenData.access_token;
+
+    // Step 2: Find user's installations for this app
+    const installRes = await fetch('https://api.github.com/user/installations', {
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'Push-App/1.0.0',
+      },
+    });
+
+    if (!installRes.ok) {
+      const errBody = await installRes.text().catch(() => '');
+      console.error('[github/app-oauth] Installations fetch failed:', installRes.status, errBody.slice(0, 300));
+      return Response.json({ error: `Failed to fetch installations (${installRes.status})` }, { status: 502 });
+    }
+
+    const installData = await installRes.json() as {
+      total_count: number;
+      installations: Array<{ id: number; app_id: number; app_slug: string }>;
+    };
+
+    // Find installation matching our app
+    const appId = Number(env.GITHUB_APP_ID);
+    const installation = installData.installations.find((inst) => inst.app_id === appId);
+
+    if (!installation) {
+      return Response.json({
+        error: 'No installation found',
+        details: 'You have not installed the Push Auth GitHub App. Please install it first, then try connecting again.',
+        install_url: `https://github.com/apps/push-auth/installations/new`,
+      }, { status: 404 });
+    }
+
+    const installationId = String(installation.id);
+
+    // Step 3: Check allowlist (if configured)
+    const allowedInstallationIds = (env.GITHUB_ALLOWED_INSTALLATION_IDS || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (allowedInstallationIds.length > 0 && !allowedInstallationIds.includes(installationId)) {
+      return Response.json({ error: 'installation_id is not allowed' }, { status: 403 });
+    }
+
+    // Step 4: Exchange for installation token (reuses existing JWT flow)
+    const jwt = await generateGitHubAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    const instTokenData = await exchangeForInstallationToken(jwt, installationId);
+
+    return Response.json({
+      token: instTokenData.token,
+      expires_at: instTokenData.expires_at,
+      installation_id: installationId,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[github/app-oauth] Error:', message);
+    return Response.json({ error: `GitHub App OAuth failed: ${message}` }, { status: 500 });
+  }
+}
+
 // --- GitHub App token exchange ---
 
 async function handleGitHubAppToken(request: Request, env: Env): Promise<Response> {
@@ -778,17 +913,26 @@ async function generateGitHubAppJWT(appId: string, privateKeyPEM: string): Promi
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
 
-  // GitHub App keys are PKCS#1 (BEGIN RSA PRIVATE KEY), but Web Crypto
-  // importKey('pkcs8') requires PKCS#8 (BEGIN PRIVATE KEY). The production
-  // Cloudflare runtime is lenient, but the local workerd dev runtime is not.
-  // Handle both formats to work everywhere.
-  const isPkcs1 = privateKeyPEM.includes('BEGIN RSA PRIVATE KEY');
+  // Normalize PEM: dotenv may store literal \n or truncate multiline values.
+  // Also handle both PKCS#1 (BEGIN RSA PRIVATE KEY) and PKCS#8 (BEGIN PRIVATE KEY).
+  // The production Cloudflare runtime accepts PKCS#1 via importKey('pkcs8'),
+  // but the local workerd dev runtime does not — so we wrap PKCS#1 in PKCS#8.
+  const normalizedPEM = privateKeyPEM.replace(/\\n/g, '\n');
+  const isPkcs1 = normalizedPEM.includes('BEGIN RSA PRIVATE KEY');
   const pemHeader = isPkcs1 ? '-----BEGIN RSA PRIVATE KEY-----' : '-----BEGIN PRIVATE KEY-----';
   const pemFooter = isPkcs1 ? '-----END RSA PRIVATE KEY-----' : '-----END PRIVATE KEY-----';
-  const pemContents = privateKeyPEM
+  const pemContents = normalizedPEM
     .replace(pemHeader, '')
     .replace(pemFooter, '')
     .replace(/\s/g, '');
+
+  if (!pemContents || pemContents.length < 100) {
+    throw new Error(
+      `Private key appears empty or truncated (${pemContents.length} base64 chars). ` +
+      'If using .dev.vars, wrap the PEM value in double quotes for multiline support.'
+    );
+  }
+
   const derBytes = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
   const pkcs8Bytes = isPkcs1 ? wrapPkcs1InPkcs8(derBytes) : derBytes;
 

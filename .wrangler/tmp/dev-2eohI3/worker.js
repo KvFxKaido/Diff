@@ -26,6 +26,9 @@ var worker_default = {
     if (url.pathname === "/api/github/app-token" && request.method === "POST") {
       return handleGitHubAppToken(request, env);
     }
+    if (url.pathname === "/api/github/app-oauth" && request.method === "POST") {
+      return handleGitHubAppOAuth(request, env);
+    }
     if (url.pathname === "/api/kimi/chat" && request.method === "POST") {
       return handleKimiChat(request, env);
     }
@@ -306,7 +309,8 @@ async function handleHealthCheck(env) {
       ollama: { status: ollamaConfigured ? "ok" : "unconfigured", configured: ollamaConfigured },
       mistral: { status: mistralConfigured ? "ok" : "unconfigured", configured: mistralConfigured },
       sandbox: { status: sandboxStatus, configured: Boolean(sandboxUrl), error: sandboxError },
-      github_app: { status: env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY ? "ok" : "unconfigured", configured: Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) }
+      github_app: { status: env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY ? "ok" : "unconfigured", configured: Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) },
+      github_app_oauth: { status: env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET ? "ok" : "unconfigured", configured: Boolean(env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET) }
     },
     version: "1.0.0"
   };
@@ -548,6 +552,100 @@ async function handleMistralChat(request, env) {
   }
 }
 __name(handleMistralChat, "handleMistralChat");
+async function handleGitHubAppOAuth(request, env) {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+  if (!env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET) {
+    return Response.json({ error: "GitHub App OAuth not configured" }, { status: 500 });
+  }
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
+    return Response.json({ error: "GitHub App not configured (needed for installation token)" }, { status: 500 });
+  }
+  const bodyResult = await readBodyText(request, 4096);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+  let payload;
+  try {
+    payload = JSON.parse(bodyResult.text);
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const code = payload.code;
+  if (!code || typeof code !== "string") {
+    return Response.json({ error: "Missing code" }, { status: 400 });
+  }
+  try {
+    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        client_id: env.GITHUB_APP_CLIENT_ID,
+        client_secret: env.GITHUB_APP_CLIENT_SECRET,
+        code
+      })
+    });
+    if (!tokenRes.ok) {
+      const errBody = await tokenRes.text().catch(() => "");
+      console.error("[github/app-oauth] Token exchange failed:", tokenRes.status, errBody.slice(0, 300));
+      return Response.json({ error: `GitHub OAuth token exchange failed (${tokenRes.status})` }, { status: 502 });
+    }
+    const tokenData = await tokenRes.json();
+    if (tokenData.error || !tokenData.access_token) {
+      console.error("[github/app-oauth] OAuth error:", tokenData.error, tokenData.error_description);
+      return Response.json({
+        error: tokenData.error_description || tokenData.error || "OAuth token exchange failed"
+      }, { status: 400 });
+    }
+    const userToken = tokenData.access_token;
+    const installRes = await fetch("https://api.github.com/user/installations", {
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Push-App/1.0.0"
+      }
+    });
+    if (!installRes.ok) {
+      const errBody = await installRes.text().catch(() => "");
+      console.error("[github/app-oauth] Installations fetch failed:", installRes.status, errBody.slice(0, 300));
+      return Response.json({ error: `Failed to fetch installations (${installRes.status})` }, { status: 502 });
+    }
+    const installData = await installRes.json();
+    const appId = Number(env.GITHUB_APP_ID);
+    const installation = installData.installations.find((inst) => inst.app_id === appId);
+    if (!installation) {
+      return Response.json({
+        error: "No installation found",
+        details: "You have not installed the Push Auth GitHub App. Please install it first, then try connecting again.",
+        install_url: `https://github.com/apps/push-auth/installations/new`
+      }, { status: 404 });
+    }
+    const installationId = String(installation.id);
+    const allowedInstallationIds = (env.GITHUB_ALLOWED_INSTALLATION_IDS || "").split(",").map((id) => id.trim()).filter(Boolean);
+    if (allowedInstallationIds.length > 0 && !allowedInstallationIds.includes(installationId)) {
+      return Response.json({ error: "installation_id is not allowed" }, { status: 403 });
+    }
+    const jwt = await generateGitHubAppJWT(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    const instTokenData = await exchangeForInstallationToken(jwt, installationId);
+    return Response.json({
+      token: instTokenData.token,
+      expires_at: instTokenData.expires_at,
+      installation_id: installationId
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[github/app-oauth] Error:", message);
+    return Response.json({ error: `GitHub App OAuth failed: ${message}` }, { status: 500 });
+  }
+}
+__name(handleGitHubAppOAuth, "handleGitHubAppOAuth");
 async function handleGitHubAppToken(request, env) {
   const requestUrl = new URL(request.url);
   const originCheck = validateOrigin(request, requestUrl, env);
@@ -609,10 +707,16 @@ async function generateGitHubAppJWT(appId, privateKeyPEM) {
   const encodedHeader = encodeBase64Url(JSON.stringify(header));
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const isPkcs1 = privateKeyPEM.includes("BEGIN RSA PRIVATE KEY");
+  const normalizedPEM = privateKeyPEM.replace(/\\n/g, "\n");
+  const isPkcs1 = normalizedPEM.includes("BEGIN RSA PRIVATE KEY");
   const pemHeader = isPkcs1 ? "-----BEGIN RSA PRIVATE KEY-----" : "-----BEGIN PRIVATE KEY-----";
   const pemFooter = isPkcs1 ? "-----END RSA PRIVATE KEY-----" : "-----END PRIVATE KEY-----";
-  const pemContents = privateKeyPEM.replace(pemHeader, "").replace(pemFooter, "").replace(/\s/g, "");
+  const pemContents = normalizedPEM.replace(pemHeader, "").replace(pemFooter, "").replace(/\s/g, "");
+  if (!pemContents || pemContents.length < 100) {
+    throw new Error(
+      `Private key appears empty or truncated (${pemContents.length} base64 chars). If using .dev.vars, wrap the PEM value in double quotes for multiline support.`
+    );
+  }
   const derBytes = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
   const pkcs8Bytes = isPkcs1 ? wrapPkcs1InPkcs8(derBytes) : derBytes;
   const cryptoKey = await crypto.subtle.importKey(
@@ -731,7 +835,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-uPDC5f/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-adGpd9/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -763,7 +867,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-uPDC5f/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-adGpd9/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

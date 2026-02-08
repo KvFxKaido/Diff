@@ -11,6 +11,9 @@ const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 // GitHub App name for installation URL
 const GITHUB_APP_NAME = 'push-auth';
 
+// GitHub App OAuth Client ID (public value — safe to hardcode, like GITHUB_APP_NAME)
+const GITHUB_APP_CLIENT_ID = 'Iv23liJZx2boQUWBDb3T';
+
 type TokenResponse = {
   token: string;
   expires_at: string;
@@ -21,6 +24,7 @@ type TokenResponse = {
 type UseGitHubAppAuth = {
   token: string;
   installationId: string;
+  connect: () => void;
   install: () => void;
   disconnect: () => void;
   setInstallationIdManually: (instId: string) => Promise<boolean>;
@@ -60,6 +64,40 @@ async function fetchAppToken(installationId: string): Promise<TokenResponse> {
     } catch {
       // Non-JSON error body (e.g. proxy/runtime HTML)
       rawError = rawBody.slice(0, 300);
+    }
+    throw new Error(formatAppTokenError(res.status, rawError));
+  }
+
+  return res.json();
+}
+
+async function fetchAppOAuth(code: string): Promise<TokenResponse & { installation_id: string }> {
+  const res = await fetch('/api/github/app-oauth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+
+  if (!res.ok) {
+    const rawBody = await res.text().catch(() => '');
+    let rawError = '';
+    let installUrl = '';
+    try {
+      const data = JSON.parse(rawBody) as { error?: unknown; details?: unknown; install_url?: unknown };
+      if (typeof data.error === 'string' && data.error.trim()) {
+        rawError = data.error;
+      } else if (typeof data.details === 'string' && data.details.trim()) {
+        rawError = data.details;
+      }
+      if (typeof data.install_url === 'string') {
+        installUrl = data.install_url;
+      }
+    } catch {
+      rawError = rawBody.slice(0, 300);
+    }
+
+    if (res.status === 404 && installUrl) {
+      throw new Error(rawError || 'No installation found. Please install the GitHub App first.');
     }
     throw new Error(formatAppTokenError(res.status, rawError));
   }
@@ -160,19 +198,56 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     }
   }, [scheduleRefresh]);
 
-  // Handle installation callback from GitHub
+  // Handle OAuth code callback (auto-connect flow)
+  const handleOAuthCallback = useCallback(async (code: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await fetchAppOAuth(code);
+
+      localStorage.setItem(INSTALLATION_ID_KEY, data.installation_id);
+      localStorage.setItem(TOKEN_KEY, data.token);
+      localStorage.setItem(TOKEN_EXPIRY_KEY, data.expires_at);
+
+      setInstallationId(data.installation_id);
+      setToken(data.token);
+      setTokenExpiry(data.expires_at);
+
+      const user = await validateToken(data.token);
+      if (user) {
+        setValidatedUser(user);
+      }
+
+      scheduleRefresh(data.expires_at, data.installation_id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'OAuth connection failed';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [scheduleRefresh]);
+
+  // Handle installation callback from GitHub (install flow) or OAuth code callback (connect flow)
   useEffect(() => {
     const url = new URL(window.location.href);
+
+    // Install callback: ?installation_id=...&setup_action=install
     const instId = url.searchParams.get('installation_id');
     const setupAction = url.searchParams.get('setup_action');
-
     if (instId && setupAction === 'install') {
-      // Clear URL params
       window.history.replaceState({}, document.title, window.location.pathname);
-      // Fetch token for new installation
       fetchAndSetToken(instId);
+      return;
     }
-  }, [fetchAndSetToken]);
+
+    // OAuth callback: ?code=...
+    const code = url.searchParams.get('code');
+    if (code) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      handleOAuthCallback(code);
+    }
+  }, [fetchAndSetToken, handleOAuthCallback]);
 
   // On mount: validate existing installation
   useEffect(() => {
@@ -218,6 +293,14 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     };
   }, []);
 
+  const connect = useCallback(() => {
+    // Redirect to GitHub OAuth for auto-connect (finds existing installation automatically)
+    const redirectUri = encodeURIComponent(window.location.origin);
+    window.location.assign(
+      `https://github.com/login/oauth/authorize?client_id=${GITHUB_APP_CLIENT_ID}&redirect_uri=${redirectUri}`
+    );
+  }, []);
+
   const install = useCallback(() => {
     // Redirect to GitHub App installation page
     const redirectUri = encodeURIComponent(window.location.origin);
@@ -255,6 +338,7 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
   return {
     token,
     installationId,
+    connect,
     install,
     setInstallationIdManually,
     disconnect,

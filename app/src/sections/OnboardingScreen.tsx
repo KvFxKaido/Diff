@@ -4,6 +4,7 @@ import type { GitHubUser } from '@/types';
 
 interface OnboardingScreenProps {
   onConnect: (pat: string) => Promise<boolean>;
+  onConnectOAuth: () => void;
   onDemo: () => void;
   onInstallApp: () => void;
   onConnectInstallationId: (installationId: string) => Promise<boolean>;
@@ -15,6 +16,7 @@ interface OnboardingScreenProps {
 
 export function OnboardingScreen({
   onConnect,
+  onConnectOAuth,
   onDemo,
   onInstallApp,
   onConnectInstallationId,
@@ -177,9 +179,9 @@ export function OnboardingScreen({
             </>
           ) : (
             <>
-              {/* GitHub App install (primary) */}
+              {/* Connect with GitHub (OAuth auto-detect — primary) */}
               <button
-                onClick={onInstallApp}
+                onClick={onConnectOAuth}
                 disabled={loading}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0070f3] px-4 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-[#0060d3] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
               >
@@ -191,15 +193,15 @@ export function OnboardingScreen({
                 ) : (
                   <>
                     <Github className="h-4 w-4" />
-                    Install GitHub App
+                    Connect with GitHub
                   </>
                 )}
               </button>
 
               <p className="text-xs text-[#52525b] text-center leading-relaxed">
-                One-click install. Select which repos to grant access.
+                One click for returning users.
                 <br />
-                <span className="text-emerald-500/80">Recommended</span> — more secure than PAT.
+                <span className="text-emerald-500/80">Recommended</span> — auto-detects your installation.
               </p>
 
               {error && (
@@ -207,6 +209,16 @@ export function OnboardingScreen({
                   {error}
                 </p>
               )}
+
+              {/* Install GitHub App (secondary — for first-time users) */}
+              <button
+                onClick={onInstallApp}
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#1a1a1a] bg-transparent px-4 py-3 text-sm text-[#71717a] transition-all duration-200 hover:border-[#27272a] hover:text-[#a1a1aa] active:scale-[0.98]"
+              >
+                <Github className="h-4 w-4" />
+                Install GitHub App
+              </button>
 
               {/* PAT fallback */}
               <button

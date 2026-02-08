@@ -93,6 +93,7 @@ function App() {
   // GitHub App auth (primary)
   const {
     token: appToken,
+    connect: connectApp,
     install: installApp,
     disconnect: appDisconnect,
     setInstallationIdManually,
@@ -373,6 +374,7 @@ function App() {
       <div className="flex h-dvh flex-col bg-[#000] safe-area-top safe-area-bottom">
         <OnboardingScreen
           onConnect={handleConnect}
+          onConnectOAuth={connectApp}
           onDemo={handleDemo}
           onInstallApp={installApp}
           onConnectInstallationId={setInstallationIdManually}
@@ -648,12 +650,23 @@ function App() {
                             variant="ghost"
                             size="sm"
                             onClick={() => {
-                              installApp();
+                              connectApp();
                               setSettingsOpen(false);
                             }}
                             className="text-[#0070f3] hover:text-[#0060d3] w-full justify-start"
                           >
-                            ⬆️ Upgrade to GitHub App
+                            ⬆️ Connect with GitHub
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              installApp();
+                              setSettingsOpen(false);
+                            }}
+                            className="text-[#52525b] hover:text-[#a1a1aa] w-full justify-start text-xs"
+                          >
+                            Install GitHub App (first time)
                           </Button>
                           <Button
                             variant="ghost"
@@ -661,7 +674,7 @@ function App() {
                             onClick={() => setShowInstallIdInput(true)}
                             className="text-[#52525b] hover:text-[#a1a1aa] w-full justify-start text-xs"
                           >
-                            Already installed? Enter ID manually
+                            Enter installation ID manually
                           </Button>
                         </>
                       )}
