@@ -170,7 +170,7 @@ function getToolStatusLabel(toolCall: AnyToolCall): string {
 
 function shouldPrewarmSandbox(text: string, attachments?: AttachmentData[]): boolean {
   const normalized = text.toLowerCase();
-  const intentRegex = /\b(edit|modify|change|refactor|fix|implement|write|create|add|remove|rename|run|test|build|lint|compile|typecheck|type-check|commit|push|patch|bug|failing|error|debug)\b/;
+  const intentRegex = /\b(edit|modify|change|refactor|fix|implement|write|create|add|remove|rename|run|test|build|lint|compile|typecheck|type-check|commit|push|patch|bug|failing|error|debug|screenshot|browser|webpage|website|navigate|url)\b/;
   if (intentRegex.test(normalized)) return true;
 
   const fileHintRegex = /\b([a-z0-9_\-/]+\.(ts|tsx|js|jsx|py|rs|go|java|rb|css|html|json|md|yml|yaml|toml|sh))\b/i;
@@ -807,7 +807,8 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
               // No longer render or persist sandbox state cards in chat.
               continue;
             }
-            if (toolExecResult.card.type === 'browser-screenshot') {
+            const isBrowserScreenshotCard = toolExecResult.card.type === 'browser-screenshot';
+            if (isBrowserScreenshotCard) {
               const browserCardMsg: ChatMessage = {
                 id: createId(),
                 role: 'assistant',
@@ -823,21 +824,23 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
               });
             }
 
-            setConversations((prev) => {
-              const conv = prev[chatId];
-              if (!conv) return prev;
-              const msgs = [...conv.messages];
-              for (let i = msgs.length - 1; i >= 0; i--) {
-                if (msgs[i].role === 'assistant' && msgs[i].isToolCall) {
-                  msgs[i] = {
-                    ...msgs[i],
-                    cards: [...(msgs[i].cards || []), toolExecResult.card!],
-                  };
-                  break;
+            if (!isBrowserScreenshotCard) {
+              setConversations((prev) => {
+                const conv = prev[chatId];
+                if (!conv) return prev;
+                const msgs = [...conv.messages];
+                for (let i = msgs.length - 1; i >= 0; i--) {
+                  if (msgs[i].role === 'assistant' && msgs[i].isToolCall) {
+                    msgs[i] = {
+                      ...msgs[i],
+                      cards: [...(msgs[i].cards || []), toolExecResult.card!],
+                    };
+                    break;
+                  }
                 }
-              }
-              return { ...prev, [chatId]: { ...conv, messages: msgs } };
-            });
+                return { ...prev, [chatId]: { ...conv, messages: msgs } };
+              });
+            }
           }
 
           // Create tool result message
