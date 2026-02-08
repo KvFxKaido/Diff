@@ -14,6 +14,11 @@ import json
 import hmac
 import secrets
 import urllib.request
+import urllib.parse
+import urllib.error
+import ipaddress
+import socket
+from playwright.sync_api import sync_playwright
 
 app = modal.App("push-sandbox")
 
@@ -31,9 +36,10 @@ sandbox_image = (
     )
 )
 
-# Image for the web endpoint functions themselves (needs FastAPI)
-endpoint_image = modal.Image.debian_slim(python_version="3.12").pip_install("fastapi[standard]")
+# Image for the web endpoint functions themselves (needs FastAPI + remote browser control)
+endpoint_image = modal.Image.debian_slim(python_version="3.12").pip_install("fastapi[standard]", "playwright")
 OWNER_TOKEN_FILE = "/tmp/push-owner-token"
+MAX_SCREENSHOT_BYTES = 1_500_000
 LIST_DIR_SCRIPT = """
 import json
 import os
@@ -124,6 +130,81 @@ def _validate_owner_token(sb: modal.Sandbox, provided_token: str) -> bool:
         return False
     expected = p.stdout.read().strip()
     return bool(expected) and hmac.compare_digest(expected, str(provided_token))
+
+
+def _is_blocked_browser_target(url: str) -> tuple[bool, str]:
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
+        return True, "Invalid URL"
+
+    if parsed.scheme not in ("http", "https"):
+        return True, "Only http(s) URLs are allowed"
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return True, "URL hostname is required"
+
+    if hostname in ("localhost", "127.0.0.1", "::1") or hostname.endswith(".local"):
+        return True, "Localhost targets are not allowed"
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            return True, "Private/local network targets are not allowed"
+    except ValueError:
+        # Hostname: resolve and block if it resolves to private/local addresses.
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+            for info in infos:
+                candidate = info[4][0]
+                resolved = ipaddress.ip_address(candidate)
+                if (
+                    resolved.is_private
+                    or resolved.is_loopback
+                    or resolved.is_link_local
+                    or resolved.is_multicast
+                    or resolved.is_reserved
+                    or resolved.is_unspecified
+                ):
+                    return True, "Target resolves to a private/local network address"
+        except Exception:
+            # DNS failures are treated as invalid targets.
+            return True, "Unable to resolve hostname"
+
+    return False, ""
+
+
+def _browserbase_create_session(api_key: str, project_id: str) -> dict:
+    payload = json.dumps({"projectId": project_id}).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.browserbase.com/v1/sessions",
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-BB-API-Key": api_key,
+        },
+        data=payload,
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        raw = resp.read()
+    return json.loads(raw)
+
+
+def _browserbase_end_session(api_key: str, session_id: str) -> None:
+    if not session_id:
+        return
+    req = urllib.request.Request(
+        f"https://api.browserbase.com/v1/sessions/{urllib.parse.quote(session_id)}",
+        method="DELETE",
+        headers={"X-BB-API-Key": api_key},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except Exception:
+        # Best-effort cleanup only.
+        return
 
 
 @app.function(image=endpoint_image)
@@ -393,11 +474,101 @@ def browser_screenshot(data: dict):
             "details": "Missing Browserbase credentials. Configure BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID on the Worker.",
         }
 
-    return {
-        "ok": False,
-        "error": "BROWSERBASE_NOT_IMPLEMENTED",
-        "details": "Browserbase session execution is not wired yet. Next step is adding the Browserbase session + screenshot call in this endpoint.",
-    }
+    blocked, blocked_reason = _is_blocked_browser_target(url)
+    if blocked:
+        return {
+            "ok": False,
+            "error": "INVALID_URL",
+            "details": blocked_reason,
+        }
+
+    full_page = bool(data.get("full_page", False))
+    session_id = ""
+
+    try:
+        session = _browserbase_create_session(browserbase_api_key, browserbase_project_id)
+        session_id = str(session.get("id", ""))
+        connect_url = str(session.get("connectUrl") or session.get("connect_url") or "").strip()
+        if not connect_url:
+            return {
+                "ok": False,
+                "error": "BROWSER_CONNECT_URL_MISSING",
+                "details": "Browserbase session was created without a connect URL.",
+            }
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(connect_url, timeout=20000)
+
+            if browser.contexts:
+                context = browser.contexts[0]
+                if context.pages:
+                    page = context.pages[0]
+                else:
+                    page = context.new_page()
+            else:
+                context = browser.new_context(viewport={"width": 390, "height": 844})
+                page = context.new_page()
+
+            page.set_default_timeout(15000)
+            response = page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=5000)
+            except Exception:
+                # networkidle can time out on long-polling pages; keep screenshot flow moving.
+                pass
+
+            status_code = response.status if response else None
+            final_url = page.url
+            title = page.title() or ""
+
+            image_bytes = page.screenshot(full_page=full_page, type="png")
+            mime_type = "image/png"
+            truncated = False
+
+            if len(image_bytes) > MAX_SCREENSHOT_BYTES:
+                # Fallback for mobile payload safety.
+                image_bytes = page.screenshot(full_page=False, type="jpeg", quality=60)
+                mime_type = "image/jpeg"
+                truncated = True
+
+            browser.close()
+
+        if len(image_bytes) > MAX_SCREENSHOT_BYTES:
+            return {
+                "ok": False,
+                "error": "IMAGE_TOO_LARGE",
+                "details": f"Screenshot exceeded {MAX_SCREENSHOT_BYTES} bytes after compression.",
+            }
+
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        return {
+            "ok": True,
+            "title": title,
+            "final_url": final_url,
+            "status_code": status_code,
+            "mime_type": mime_type,
+            "image_base64": image_b64,
+            "truncated": truncated,
+        }
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="ignore")
+        except Exception:
+            body = str(exc)
+        return {
+            "ok": False,
+            "error": "BROWSERBASE_HTTP_ERROR",
+            "details": f"{exc.code}: {body[:300]}",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": "BROWSERBASE_EXECUTION_ERROR",
+            "details": str(exc),
+        }
+    finally:
+        _browserbase_end_session(browserbase_api_key, session_id)
 
 
 @app.function(image=endpoint_image)
