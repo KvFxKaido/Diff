@@ -351,6 +351,13 @@ interface LLMMessage {
   content: string | LLMMessageContent[];
 }
 
+function isNonEmptyContent(content: string | LLMMessageContent[]): boolean {
+  if (Array.isArray(content)) {
+    return content.length > 0;
+  }
+  return content.trim().length > 0;
+}
+
 function toLLMMessages(
   messages: ChatMessage[],
   workspaceContext?: string,
@@ -413,6 +420,11 @@ function toLLMMessages(
       });
     } else {
       // Simple text message (existing behavior)
+      // Guard against provider-side validation errors:
+      // some OpenAI-compatible backends reject empty assistant turns.
+      if (msg.role === 'assistant' && !msg.content.trim()) {
+        continue;
+      }
       llmMessages.push({
         role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content,
@@ -420,7 +432,11 @@ function toLLMMessages(
     }
   }
 
-  return llmMessages;
+  // Final sanitize pass: never send empty assistant messages.
+  return llmMessages.filter((msg) => {
+    if (msg.role !== 'assistant') return true;
+    return isNonEmptyContent(msg.content);
+  });
 }
 
 // ---------------------------------------------------------------------------
