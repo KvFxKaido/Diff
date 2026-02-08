@@ -8,7 +8,16 @@
  * Sandbox tools operate on a running Modal sandbox (persistent container).
  */
 
-import type { ToolExecutionResult, SandboxCardData, DiffPreviewCardData, CommitReviewCardData, FileListCardData, TestResultsCardData, TypeCheckCardData } from '@/types';
+import type {
+  ToolExecutionResult,
+  SandboxCardData,
+  DiffPreviewCardData,
+  CommitReviewCardData,
+  FileListCardData,
+  TestResultsCardData,
+  TypeCheckCardData,
+  BrowserScreenshotCardData,
+} from '@/types';
 import { extractBareToolJsonObjects } from './tool-dispatch';
 import {
   execInSandbox,
@@ -16,9 +25,11 @@ import {
   writeToSandbox,
   getSandboxDiff,
   listDirectory,
+  browserScreenshotInSandbox,
   type FileReadResult,
 } from './sandbox-client';
 import { runAuditor } from './auditor-agent';
+import { browserToolEnabled } from './feature-flags';
 
 // --- Enhanced error messages ---
 
@@ -56,7 +67,8 @@ export type SandboxToolCall =
   | { tool: 'sandbox_prepare_commit'; args: { message: string } }
   | { tool: 'sandbox_push'; args: Record<string, never> }
   | { tool: 'sandbox_run_tests'; args: { framework?: string } }
-  | { tool: 'sandbox_check_types'; args: Record<string, never> };
+  | { tool: 'sandbox_check_types'; args: Record<string, never> }
+  | { tool: 'sandbox_browser_screenshot'; args: { url: string; fullPage?: boolean } };
 
 // --- Validation ---
 
@@ -90,6 +102,9 @@ export function validateSandboxToolCall(parsed: any): SandboxToolCall | null {
   }
   if (parsed.tool === 'sandbox_check_types') {
     return { tool: 'sandbox_check_types', args: {} };
+  }
+  if (parsed.tool === 'sandbox_browser_screenshot' && parsed.args?.url && browserToolEnabled) {
+    return { tool: 'sandbox_browser_screenshot', args: { url: parsed.args.url, fullPage: Boolean(parsed.args.fullPage) } };
   }
   return null;
 }
@@ -739,6 +754,48 @@ export async function executeSandboxToolCall(
         return { text: lines.join('\n'), card: { type: 'type-check', data: cardData } };
       }
 
+      case 'sandbox_browser_screenshot': {
+        if (!browserToolEnabled) {
+          return { text: '[Tool Error] Browser tools are disabled. Set VITE_BROWSER_TOOL_ENABLED=true to enable.' };
+        }
+
+        const targetUrl = call.args.url.trim();
+        if (!/^https?:\/\//i.test(targetUrl)) {
+          return { text: '[Tool Error] sandbox_browser_screenshot requires an absolute http(s) URL.' };
+        }
+
+        const result = await browserScreenshotInSandbox(sandboxId, targetUrl, Boolean(call.args.fullPage));
+        if (!result.ok) {
+          const detail = result.details ? ` (${result.details})` : '';
+          return { text: `[Tool Error] ${result.error || 'Browser screenshot failed'}${detail}` };
+        }
+
+        if (!result.image_base64 || !result.mime_type) {
+          return { text: '[Tool Error] Browser screenshot response was missing image data.' };
+        }
+
+        const cardData: BrowserScreenshotCardData = {
+          url: targetUrl,
+          finalUrl: result.final_url || targetUrl,
+          title: result.title || 'Browser Screenshot',
+          statusCode: typeof result.status_code === 'number' ? result.status_code : null,
+          mimeType: result.mime_type,
+          imageBase64: result.image_base64,
+          truncated: Boolean(result.truncated),
+        };
+
+        const lines = [
+          '[Tool Result — sandbox_browser_screenshot]',
+          `URL: ${cardData.url}`,
+          `Final URL: ${cardData.finalUrl}`,
+          `Title: ${cardData.title}`,
+          `Status: ${cardData.statusCode === null ? 'n/a' : cardData.statusCode}`,
+          cardData.truncated ? 'Image truncated: yes' : 'Image truncated: no',
+        ];
+
+        return { text: lines.join('\n'), card: { type: 'browser-screenshot', data: cardData } };
+      }
+
       default:
         return { text: `[Tool Error] Unknown sandbox tool: ${(call as any).tool}` };
     }
@@ -750,6 +807,10 @@ export async function executeSandboxToolCall(
 }
 
 // --- System prompt extension ---
+
+const BROWSER_TOOL_PROTOCOL_LINE = browserToolEnabled
+  ? '\n- sandbox_browser_screenshot(url, fullPage?) — Capture a webpage screenshot in the sandbox browser and return it as a card.'
+  : '';
 
 export const SANDBOX_TOOL_PROTOCOL = `
 SANDBOX TOOLS — You have access to a code sandbox (persistent container with the repo cloned).
@@ -764,7 +825,7 @@ Additional tools available when sandbox is active:
 - sandbox_prepare_commit(message) — Prepare a commit for review. Gets diff, runs Auditor. If SAFE, returns a review card for user approval. Does NOT commit — user must approve via the UI.
 - sandbox_push() — Retry a failed push. Use this only if a push failed after approval. No Auditor needed (commit was already audited).
 - sandbox_run_tests(framework?) — Run the test suite. Auto-detects npm/pytest/cargo/go if framework not specified. Returns pass/fail counts and output.
-- sandbox_check_types() — Run type checker (tsc for TypeScript, pyright/mypy for Python). Auto-detects from config files. Returns errors with file:line locations.
+- sandbox_check_types() — Run type checker (tsc for TypeScript, pyright/mypy for Python). Auto-detects from config files. Returns errors with file:line locations.${BROWSER_TOOL_PROTOCOL_LINE}
 
 Compatibility aliases also work:
 - read_sandbox_file(path) → sandbox_read_file

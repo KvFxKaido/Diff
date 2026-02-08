@@ -144,6 +144,7 @@ export type ChatCard =
   | { type: 'commit-files'; data: CommitFilesCardData }
   | { type: 'test-results'; data: TestResultsCardData }
   | { type: 'type-check'; data: TypeCheckCardData }
+  | { type: 'browser-screenshot'; data: BrowserScreenshotCardData }
   | { type: 'workflow-runs'; data: WorkflowRunsCardData }
   | { type: 'workflow-logs'; data: WorkflowLogsCardData };
 
@@ -232,6 +233,16 @@ export interface SandboxStateCardData {
   untrackedFiles: number;
   preview: string[];
   fetchedAt: string;
+}
+
+export interface BrowserScreenshotCardData {
+  url: string;
+  finalUrl: string;
+  title: string;
+  statusCode: number | null;
+  mimeType: string;
+  imageBase64: string;
+  truncated: boolean;
 }
 
 export interface DiffPreviewCardData {

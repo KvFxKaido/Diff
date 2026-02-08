@@ -10,6 +10,8 @@ interface Env {
   OLLAMA_API_KEY?: string;
   MISTRAL_API_KEY?: string;
   MODAL_SANDBOX_BASE_URL?: string;
+  BROWSERBASE_API_KEY?: string;
+  BROWSERBASE_PROJECT_ID?: string;
   ALLOWED_ORIGINS?: string;
   ASSETS: Fetcher;
   // GitHub App credentials
@@ -27,12 +29,13 @@ const rateLimitStore = new Map<string, { count: number; windowStart: number }>()
 const SANDBOX_ROUTES: Record<string, string> = {
   create: 'create',
   exec: 'exec-command',
-  read: 'read-file',
-  write: 'write-file',
+  read: 'file-ops',
+  write: 'file-ops',
   diff: 'get-diff',
   cleanup: 'cleanup',
-  list: 'list-dir',
-  delete: 'delete-file',
+  list: 'file-ops',
+  delete: 'file-ops',
+  'browser-screenshot': 'browser-screenshot',
 };
 
 export default {
@@ -251,6 +254,28 @@ async function handleSandbox(request: Request, env: Env, requestUrl: URL, route:
     return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
   }
 
+  // Route-specific payload enrichment without changing client contracts.
+  let forwardBodyText = bodyResult.text;
+  if (route === 'read' || route === 'write' || route === 'list' || route === 'delete' || route === 'browser-screenshot') {
+    try {
+      const payload = JSON.parse(bodyResult.text) as Record<string, unknown>;
+
+      if (route === 'read') payload.action = 'read';
+      if (route === 'write') payload.action = 'write';
+      if (route === 'list') payload.action = 'list';
+      if (route === 'delete') payload.action = 'delete';
+
+      if (route === 'browser-screenshot') {
+        payload.browserbase_api_key = env.BROWSERBASE_API_KEY || '';
+        payload.browserbase_project_id = env.BROWSERBASE_PROJECT_ID || '';
+      }
+
+      forwardBodyText = JSON.stringify(payload);
+    } catch {
+      return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+  }
+
   // Forward to Modal web endpoint
   // Modal web endpoints follow pattern: {base}-{function_name}.modal.run
   const modalUrl = `${baseUrl}-${modalFunction}.modal.run`;
@@ -266,7 +291,7 @@ async function handleSandbox(request: Request, env: Env, requestUrl: URL, route:
         headers: {
           'Content-Type': 'application/json',
         },
-        body: bodyResult.text,
+        body: forwardBodyText,
         signal: controller.signal,
       });
     } finally {

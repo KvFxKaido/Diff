@@ -16,6 +16,7 @@ import { FileSearchCard } from './FileSearchCard';
 import { CommitFilesCard } from './CommitFilesCard';
 import { TestResultsCard } from './TestResultsCard';
 import { TypeCheckCard } from './TypeCheckCard';
+import { BrowserScreenshotCard } from './BrowserScreenshotCard';
 import { WorkflowRunsCard } from './WorkflowRunsCard';
 import { WorkflowLogsCard } from './WorkflowLogsCard';
 
@@ -90,6 +91,8 @@ export function CardRenderer({ card, messageId, cardIndex, onAction }: CardRende
       return <TestResultsCard data={card.data} />;
     case 'type-check':
       return <TypeCheckCard data={card.data} />;
+    case 'browser-screenshot':
+      return <BrowserScreenshotCard data={card.data} />;
     case 'workflow-runs':
       return <WorkflowRunsCard data={card.data} />;
     case 'workflow-logs':

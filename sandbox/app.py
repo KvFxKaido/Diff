@@ -1,7 +1,7 @@
 """
 Modal Python App — Sandbox CRUD for Push.
 
-Exposes 9 web endpoints as plain HTTPS POST routes.
+Exposes sandbox web endpoints as plain HTTPS POST routes.
 Each endpoint receives JSON and returns JSON.
 Browser never talks to this directly — Cloudflare Worker proxies all calls.
 
@@ -34,6 +34,38 @@ sandbox_image = (
 # Image for the web endpoint functions themselves (needs FastAPI)
 endpoint_image = modal.Image.debian_slim(python_version="3.12").pip_install("fastapi[standard]")
 OWNER_TOKEN_FILE = "/tmp/push-owner-token"
+LIST_DIR_SCRIPT = """
+import json
+import os
+import sys
+
+target = sys.argv[1]
+
+try:
+    entries = []
+    with os.scandir(target) as it:
+        for entry in it:
+            if entry.name in (".", ".."):
+                continue
+
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    entries.append({"name": entry.name, "type": "directory", "size": 0})
+                elif entry.is_file(follow_symlinks=False):
+                    size = 0
+                    try:
+                        size = entry.stat(follow_symlinks=False).st_size
+                    except Exception:
+                        size = 0
+                    entries.append({"name": entry.name, "type": "file", "size": size})
+            except Exception:
+                continue
+
+    entries.sort(key=lambda e: (0 if e["type"] == "directory" else 1, e["name"].lower()))
+    print(json.dumps({"ok": True, "entries": entries}))
+except Exception as exc:
+    print(json.dumps({"ok": False, "error": str(exc)}))
+"""
 
 
 def _fetch_github_user(token: str) -> tuple[str, str]:
@@ -174,81 +206,118 @@ def exec_command(data: dict):
 
 @app.function(image=endpoint_image)
 @modal.fastapi_endpoint(method="POST")
-def read_file(data: dict):
-    """Read a file from the sandbox."""
+def file_ops(data: dict):
+    """Handle sandbox file operations through one endpoint (read/write/list/delete)."""
     sandbox_id = data.get("sandbox_id")
     owner_token = data.get("owner_token", "")
+    action = data.get("action", "")
     path = data.get("path", "")
 
-    if not sandbox_id or not path:
-        return {"error": "Missing sandbox_id or path"}
+    if not sandbox_id:
+        return {"error": "Missing sandbox_id"}
+    if action not in ("read", "write", "list", "delete"):
+        return {"error": f"Unknown file operation: {action}"}
 
     sb = modal.Sandbox.from_id(sandbox_id)
     if not _validate_owner_token(sb, owner_token):
-        return {"error": "Unauthorized sandbox access", "content": ""}
-    p = sb.exec("cat", path)
-    p.wait()
+        if action in ("write", "delete"):
+            return {"ok": False, "error": "Unauthorized sandbox access"}
+        if action == "read":
+            return {"error": "Unauthorized sandbox access", "content": ""}
+        return {"error": "Unauthorized sandbox access", "entries": []}
 
-    if p.returncode != 0:
-        stderr = p.stderr.read()
-        return {"error": f"Read failed: {stderr}", "content": ""}
+    if action == "read":
+        if not path:
+            return {"error": "Missing sandbox_id or path"}
+        p = sb.exec("cat", path)
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"error": f"Read failed: {stderr}", "content": ""}
 
-    content = p.stdout.read()
-    return {"content": content[:50_000], "truncated": len(content) > 50_000}
+        content = p.stdout.read()
+        return {"content": content[:50_000], "truncated": len(content) > 50_000}
 
+    if action == "write":
+        content = str(data.get("content", ""))
+        if not path:
+            return {"ok": False, "error": "Missing sandbox_id or path"}
 
-@app.function(image=endpoint_image)
-@modal.fastapi_endpoint(method="POST")
-def write_file(data: dict):
-    """Write a file in the sandbox."""
-    sandbox_id = data.get("sandbox_id")
-    owner_token = data.get("owner_token", "")
-    path = data.get("path", "")
-    content = data.get("content", "")
+        safe_path = path.replace("'", "'\\''")
 
-    if not sandbox_id or not path:
+        p = sb.exec("bash", "-c", f"mkdir -p \"$(dirname '{safe_path}')\"")
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"ok": False, "error": f"Failed to create directory: {stderr}"}
+
+        encoded = base64.b64encode(content.encode()).decode()
+        p = sb.exec(
+            "bash",
+            "-c",
+            f"printf '%s' '{encoded}' | base64 -d > '{safe_path}'",
+        )
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"ok": False, "error": f"Write failed: {stderr}"}
+
+        p = sb.exec("bash", "-c", f"wc -c < '{safe_path}'")
+        p.wait()
+        if p.returncode != 0:
+            return {"ok": False, "error": "Verification failed — file may not have been written"}
+
+        written_bytes = p.stdout.read().strip()
+        return {
+            "ok": True,
+            "bytes_written": int(written_bytes) if written_bytes.isdigit() else 0,
+        }
+
+    if action == "list":
+        target = path or "/workspace"
+        p = sb.exec("python3", "-c", LIST_DIR_SCRIPT, target)
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"error": f"List failed: {stderr}", "entries": []}
+
+        stdout = p.stdout.read().strip()
+        if not stdout:
+            return {"entries": []}
+
+        try:
+            parsed = json.loads(stdout)
+        except Exception:
+            return {"error": "List failed: invalid response from sandbox", "entries": []}
+
+        if not parsed.get("ok"):
+            return {"error": f"List failed: {parsed.get('error', 'Unknown error')}", "entries": []}
+
+        base = target.rstrip("/") or "/"
+        entries = []
+        for item in parsed.get("entries", []):
+            name = item.get("name", "")
+            if not name:
+                continue
+            entry_path = f"/{name}" if base == "/" else f"{base}/{name}"
+            entries.append({
+                "name": name,
+                "path": entry_path,
+                "type": "directory" if item.get("type") == "directory" else "file",
+                "size": int(item.get("size", 0) or 0),
+            })
+
+        return {"entries": entries}
+
+    # action == "delete"
+    if not path:
         return {"ok": False, "error": "Missing sandbox_id or path"}
+    if path in ("/", "/workspace", "/workspace/"):
+        return {"ok": False, "error": "Cannot delete workspace root"}
 
-    sb = modal.Sandbox.from_id(sandbox_id)
-    if not _validate_owner_token(sb, owner_token):
-        return {"ok": False, "error": "Unauthorized sandbox access"}
-
-    # Escape single quotes in path for shell safety
-    safe_path = path.replace("'", "'\\''")
-
-    # Step 1: Create parent directory
-    p = sb.exec("bash", "-c", f"mkdir -p \"$(dirname '{safe_path}')\"")
+    p = sb.exec("rm", "-rf", path)
     p.wait()
-    if p.returncode != 0:
-        stderr = p.stderr.read()
-        return {"ok": False, "error": f"Failed to create directory: {stderr}"}
-
-    # Step 2: Write file using base64 encoding for safe content transfer.
-    # Use printf instead of echo (no trailing newline interpretation).
-    encoded = base64.b64encode(content.encode()).decode()
-    p = sb.exec(
-        "bash",
-        "-c",
-        f"printf '%s' '{encoded}' | base64 -d > '{safe_path}'",
-    )
-    p.wait()
-
-    if p.returncode != 0:
-        stderr = p.stderr.read()
-        return {"ok": False, "error": f"Write failed: {stderr}"}
-
-    # Step 3: Verify the file exists and has content (catches silent write failures)
-    p = sb.exec("bash", "-c", f"wc -c < '{safe_path}'")
-    p.wait()
-
-    if p.returncode != 0:
-        return {"ok": False, "error": "Verification failed — file may not have been written"}
-
-    written_bytes = p.stdout.read().strip()
-    return {
-        "ok": True,
-        "bytes_written": int(written_bytes) if written_bytes.isdigit() else 0,
-    }
+    return {"ok": p.returncode == 0}
 
 
 @app.function(image=endpoint_image)
@@ -302,109 +371,33 @@ def get_diff(data: dict):
 
 @app.function(image=endpoint_image)
 @modal.fastapi_endpoint(method="POST")
-def list_dir(data: dict):
-    """List directory contents with metadata."""
+def browser_screenshot(data: dict):
+    """Browser screenshot endpoint (Browserbase-backed; wiring scaffold)."""
     sandbox_id = data.get("sandbox_id")
     owner_token = data.get("owner_token", "")
-    path = data.get("path", "/workspace")
+    url = str(data.get("url", "")).strip()
 
-    if not sandbox_id:
-        return {"error": "Missing sandbox_id", "entries": []}
-
-    sb = modal.Sandbox.from_id(sandbox_id)
-    if not _validate_owner_token(sb, owner_token):
-        return {"error": "Unauthorized sandbox access", "entries": []}
-    script = """
-import json
-import os
-import sys
-
-target = sys.argv[1]
-
-try:
-    entries = []
-    with os.scandir(target) as it:
-        for entry in it:
-            if entry.name in (".", ".."):
-                continue
-
-            try:
-                if entry.is_dir(follow_symlinks=False):
-                    entries.append({"name": entry.name, "type": "directory", "size": 0})
-                elif entry.is_file(follow_symlinks=False):
-                    size = 0
-                    try:
-                        size = entry.stat(follow_symlinks=False).st_size
-                    except Exception:
-                        size = 0
-                    entries.append({"name": entry.name, "type": "file", "size": size})
-            except Exception:
-                continue
-
-    entries.sort(key=lambda e: (0 if e["type"] == "directory" else 1, e["name"].lower()))
-    print(json.dumps({"ok": True, "entries": entries}))
-except Exception as exc:
-    print(json.dumps({"ok": False, "error": str(exc)}))
-"""
-
-    p = sb.exec("python3", "-c", script, path)
-    p.wait()
-
-    if p.returncode != 0:
-        stderr = p.stderr.read()
-        return {"error": f"List failed: {stderr}", "entries": []}
-
-    stdout = p.stdout.read().strip()
-    if not stdout:
-        return {"entries": []}
-
-    try:
-        parsed = json.loads(stdout)
-    except Exception:
-        return {"error": "List failed: invalid response from sandbox", "entries": []}
-
-    if not parsed.get("ok"):
-        return {"error": f"List failed: {parsed.get('error', 'Unknown error')}", "entries": []}
-
-    base = path.rstrip("/") or "/"
-    entries = []
-    for item in parsed.get("entries", []):
-        name = item.get("name", "")
-        if not name:
-            continue
-        entry_path = f"/{name}" if base == "/" else f"{base}/{name}"
-        entries.append({
-            "name": name,
-            "path": entry_path,
-            "type": "directory" if item.get("type") == "directory" else "file",
-            "size": int(item.get("size", 0) or 0),
-        })
-
-    return {"entries": entries}
-
-
-@app.function(image=endpoint_image)
-@modal.fastapi_endpoint(method="POST")
-def delete_file(data: dict):
-    """Delete a file or directory from the sandbox."""
-    sandbox_id = data.get("sandbox_id")
-    owner_token = data.get("owner_token", "")
-    path = data.get("path", "")
-
-    if not sandbox_id or not path:
-        return {"ok": False, "error": "Missing sandbox_id or path"}
-
-    # Safety: prevent deleting workspace root or system paths
-    if path in ("/", "/workspace", "/workspace/"):
-        return {"ok": False, "error": "Cannot delete workspace root"}
+    if not sandbox_id or not url:
+        return {"ok": False, "error": "Missing sandbox_id or url"}
 
     sb = modal.Sandbox.from_id(sandbox_id)
     if not _validate_owner_token(sb, owner_token):
         return {"ok": False, "error": "Unauthorized sandbox access"}
-    p = sb.exec("rm", "-rf", path)
-    p.wait()
 
-    return {"ok": p.returncode == 0}
+    browserbase_api_key = str(data.get("browserbase_api_key", "")).strip()
+    browserbase_project_id = str(data.get("browserbase_project_id", "")).strip()
+    if not browserbase_api_key or not browserbase_project_id:
+        return {
+            "ok": False,
+            "error": "BROWSERBASE_NOT_CONFIGURED",
+            "details": "Missing Browserbase credentials. Configure BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID on the Worker.",
+        }
+
+    return {
+        "ok": False,
+        "error": "BROWSERBASE_NOT_IMPLEMENTED",
+        "details": "Browserbase session execution is not wired yet. Next step is adding the Browserbase session + screenshot call in this endpoint.",
+    }
 
 
 @app.function(image=endpoint_image)

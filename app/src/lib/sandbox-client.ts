@@ -34,6 +34,18 @@ export interface DiffResult {
   error?: string;
 }
 
+export interface BrowserScreenshotResult {
+  ok: boolean;
+  title?: string;
+  final_url?: string;
+  status_code?: number | null;
+  mime_type?: string;
+  image_base64?: string;
+  truncated?: boolean;
+  error?: string;
+  details?: string;
+}
+
 // --- Error types ---
 
 export interface SandboxError {
@@ -73,6 +85,7 @@ function formatSandboxError(status: number, body: string): Error {
 const SANDBOX_BASE = '/api/sandbox';
 const DEFAULT_TIMEOUT_MS = 30_000; // 30s for most operations
 const EXEC_TIMEOUT_MS = 120_000;   // 120s for command execution
+const BROWSER_TIMEOUT_MS = 90_000; // 90s for remote browser navigation + capture
 let sandboxOwnerToken: string | null = null;
 
 export function setSandboxOwnerToken(token: string | null): void {
@@ -344,4 +357,21 @@ export async function renameInSandbox(
   // Rename endpoint removed to fit Modal free tier (8 endpoint limit).
   // Re-add when plan is upgraded. The UI hides the rename action.
   throw new Error('Rename is not available on the current plan.');
+}
+
+export async function browserScreenshotInSandbox(
+  sandboxId: string,
+  url: string,
+  fullPage: boolean = false,
+): Promise<BrowserScreenshotResult> {
+  return sandboxFetch<BrowserScreenshotResult>(
+    'browser-screenshot',
+    {
+      ...withOwnerToken({}),
+      sandbox_id: sandboxId,
+      url,
+      full_page: fullPage,
+    },
+    BROWSER_TIMEOUT_MS,
+  );
 }
