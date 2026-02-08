@@ -33,7 +33,7 @@ The active backend serves all three roles. The user picks a backend in Settings;
 | Role | Responsibility |
 |------|----------------|
 | **Orchestrator** | Conversational lead, interprets intent, delegates to Coder |
-| **Coder** | Autonomous code implementation in sandbox (up to 5 rounds) |
+| **Coder** | Autonomous code implementation in sandbox (unbounded rounds, 90s timeout per round) |
 | **Auditor** | Pre-commit risk review — binary SAFE/UNSAFE verdict (fail-safe) |
 
 ### AI Backends
@@ -48,7 +48,7 @@ Three providers are supported for the Orchestrator, all using OpenAI-compatible 
 
 The active backend serves all three roles (Orchestrator, Coder, Auditor). Any single API key is sufficient for full functionality.
 
-API keys are configurable at runtime via Settings. When 2+ keys are set, a backend picker allows switching the Orchestrator mid-conversation. Production uses Cloudflare Worker proxies at `/api/kimi/chat`, `/api/ollama/chat`, and `/api/mistral/chat`.
+API keys are configurable at runtime via Settings. When 2+ keys are set, a backend picker appears. Provider selection is locked per chat after the first user message; start a new chat to switch providers. Production uses Cloudflare Worker proxies at `/api/kimi/chat`, `/api/ollama/chat`, and `/api/mistral/chat`.
 
 ### Tool Protocol
 
@@ -62,7 +62,7 @@ A shared notepad that both the user and AI can read/write. Content persists in l
 
 ### Rolling Window
 
-Context is trimmed to the last 30 messages before sending to the LLM. Tool call/result pairs are kept together to prevent orphaned results. This reduces latency and keeps the LLM focused on recent conversation.
+Context uses a token budget with summarization. Older tool-heavy messages are compacted first, then oldest message pairs are trimmed if needed while preserving critical context.
 
 ### Project Instructions (Two-Phase Loading)
 
@@ -70,7 +70,7 @@ When the user selects a repo, the app fetches project instruction files via the 
 
 ### Data Flow
 
-1. **Onboard** → Validate GitHub PAT
+1. **Onboard** → Connect via GitHub App (recommended) or GitHub PAT
 2. **Pick repo** → Select from user's repos (hard-locked context)
 3. **Chat** → Ask about PRs, changes, codebase
 4. **Tools** → JSON tool blocks → execute against GitHub API or sandbox
@@ -131,7 +131,7 @@ Push/
 
 | File | Purpose |
 |------|---------|
-| `lib/orchestrator.ts` | SSE streaming, think-token parsing, rolling window context |
+| `lib/orchestrator.ts` | SSE streaming, think-token parsing, token-budget context management |
 | `lib/github-tools.ts` | GitHub tool protocol, `delegate_coder`, `fetchProjectInstructions` |
 | `lib/sandbox-tools.ts` | Sandbox tool definitions |
 | `lib/scratchpad-tools.ts` | Scratchpad tools, prompt injection escaping |
@@ -140,7 +140,7 @@ Push/
 | `lib/coder-agent.ts` | Coder autonomous loop (uses active backend) |
 | `lib/auditor-agent.ts` | Auditor review + verdict (fail-safe, uses active backend) |
 | `lib/workspace-context.ts` | Active repo context builder |
-| `lib/providers.ts` | AI provider config (Orchestrator only) |
+| `lib/providers.ts` | AI provider config and role model mapping |
 
 ### Hooks (hooks/)
 
@@ -260,7 +260,7 @@ Without any API key, the app runs in demo mode with mock repos and welcome messa
 - Sandbox containers auto-terminate after 30 minutes
 - Scratchpad content is escaped to prevent prompt injection
 - Scratchpad content capped at 50KB to prevent DoS via tool flooding
-- Rolling window keeps last 30 messages, preserving tool call/result pairs
+- Context management uses token-budget summarization and preserves tool call/result pairing when trimming
 
 ## Common Tasks
 

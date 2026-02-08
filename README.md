@@ -6,11 +6,11 @@ Push is a mobile-native AI coding agent with direct GitHub repo access. Chat wit
 
 ## What It Does
 
-Push is a personal chat interface backed by role-based AI agents. Select a repo, ask questions, and the agent reads your code, analyzes PRs, and shows results as inline cards — all in a streaming conversation.
+Push is a personal chat interface backed by role-based AI agents. Select a repo, ask questions, and the agent reads your code, analyzes PRs, runs sandbox operations, and shows results as inline cards — all in a streaming conversation.
 
 - **Chat-first** — conversation is the primary interface, not forms or dashboards
 - **Repo-locked context** — select a repo and the agent only sees that repo
-- **Tool protocol** — the agent calls GitHub's API mid-conversation (PRs, commits, diffs)
+- **Tool protocol** — the agent calls GitHub and sandbox tools mid-conversation (PRs, commits, diffs, tests, type checks, workflows)
 - **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
 - **Streaming** — responses arrive token-by-token with visible thinking
 - **Demo mode** — Explore the workflow before connecting any accounts. Try the full agent experience with mock data to understand the philosophy before adding your keys.
@@ -85,10 +85,10 @@ npx wrangler deploy     # from repo root
 Role-based agent system. **Models are replaceable; roles are not.**
 
 - **Orchestrator** — conversational lead, tool orchestration, delegates to Coder
-- **Coder** — autonomous code implementation in sandbox
+- **Coder** — autonomous code implementation in sandbox (runs until done, with 90s per-round timeout)
 - **Auditor** — pre-commit safety gate, binary SAFE/UNSAFE verdict
 
-Three AI backends are supported: **Kimi For Coding**, **Mistral Vibe**, and **Ollama Cloud**. All use OpenAI-compatible streaming. The active backend serves all three roles, and you can switch anytime via Settings.
+Three AI backends are supported: **Kimi For Coding**, **Mistral Vibe**, and **Ollama Cloud**. All use OpenAI-compatible streaming. The active backend serves all three roles. Provider selection is locked per chat after the first user message; start a new chat to switch providers.
 
 ## Project Structure
 
@@ -108,7 +108,7 @@ Push/
 │   │   │   └── ui/        # shadcn/ui component library
 │   │   └── hooks/         # useChat, useSandbox, useScratchpad, useGitHubAuth, useGitHubAppAuth, useRepos
 │   │   ├── lib/           # Agent logic, tool protocols, git operations
-│   │   ├── sections/      # OnboardingScreen, ConversationScreen
+│   │   ├── sections/      # OnboardingScreen, RepoPicker, FileBrowser
 │   │   └── types/         # TypeScript definitions
 │   └── package.json
 └── README.md
