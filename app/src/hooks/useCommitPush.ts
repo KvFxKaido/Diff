@@ -101,11 +101,12 @@ export function useCommitPush(sandboxId: string) {
   }, [sandboxId]);
 
   const commitAndPush = useCallback(async () => {
-    const message = state.commitMessage.trim();
+    const message = state.commitMessage.replace(/[\r\n]+/g, ' ').trim();
     if (!message) {
       setState((s) => ({ ...s, phase: 'error', error: 'Commit message is required.' }));
       return;
     }
+    const safeCommitMessage = message.replace(/'/g, `'\"'\"'`);
 
     // Require an active AI provider — runAuditor handles its own fail-safe
     if (getActiveProvider() === 'demo') {
@@ -145,7 +146,7 @@ export function useCommitPush(sandboxId: string) {
 
       const commitResult = await execInSandbox(
         sandboxId,
-        `cd /workspace && git add -A && git commit -m "${message.replace(/"/g, '\\"')}"`,
+        `cd /workspace && git add -A && git commit -m '${safeCommitMessage}'`,
       );
 
       if (commitResult.exitCode !== 0) {

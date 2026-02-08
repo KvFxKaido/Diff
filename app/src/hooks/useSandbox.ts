@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { createSandbox, cleanupSandbox, execInSandbox } from '@/lib/sandbox-client';
+import { createSandbox, cleanupSandbox, execInSandbox, setSandboxOwnerToken } from '@/lib/sandbox-client';
 
 export type SandboxStatus = 'idle' | 'creating' | 'ready' | 'error';
 
@@ -24,6 +24,7 @@ const SANDBOX_MAX_AGE_MS = 25 * 60 * 1000; // 25 min (conservative vs Modal's 30
 
 interface PersistedSandboxSession {
   sandboxId: string;
+  ownerToken: string;
   repoFullName: string;
   branch: string;
   createdAt: number;
@@ -46,7 +47,7 @@ function loadSession(): PersistedSandboxSession | null {
     const raw = localStorage.getItem(SANDBOX_SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as PersistedSandboxSession;
-    if (!session.sandboxId || !session.repoFullName || !session.createdAt) return null;
+    if (!session.sandboxId || !session.ownerToken || !session.repoFullName || !session.createdAt) return null;
     return session;
   } catch {
     return null;
@@ -55,6 +56,7 @@ function loadSession(): PersistedSandboxSession | null {
 
 function clearSession(): void {
   localStorage.removeItem(SANDBOX_SESSION_KEY);
+  setSandboxOwnerToken(null);
 }
 
 export function useSandbox(activeRepoFullName?: string | null) {
@@ -92,6 +94,7 @@ export function useSandbox(activeRepoFullName?: string | null) {
 
     let cancelled = false;
     reconnectingRef.current = true;
+    setSandboxOwnerToken(saved.ownerToken);
 
     const reconnectPromise = execInSandbox(saved.sandboxId, 'true')
       .then((result) => {
@@ -151,6 +154,7 @@ export function useSandbox(activeRepoFullName?: string | null) {
 
     setStatus('creating');
     setError(null);
+    setSandboxOwnerToken(null);
 
     try {
       const token = getGitHubToken();
@@ -164,9 +168,11 @@ export function useSandbox(activeRepoFullName?: string | null) {
 
       setSandboxId(session.sandboxId);
       setStatus('ready');
+      setSandboxOwnerToken(session.ownerToken || null);
 
       saveSession({
         sandboxId: session.sandboxId,
+        ownerToken: session.ownerToken || '',
         repoFullName: repo,
         branch: branch || 'main',
         createdAt: Date.now(),
@@ -185,12 +191,12 @@ export function useSandbox(activeRepoFullName?: string | null) {
     const id = sandboxIdRef.current;
     if (!id) return;
 
-    clearSession();
-
     try {
       await cleanupSandbox(id);
     } catch {
       // Best effort — container will auto-terminate anyway
+    } finally {
+      clearSession();
     }
 
     setSandboxId(null);

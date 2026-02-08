@@ -9,6 +9,7 @@
 
 export interface SandboxSession {
   sandboxId: string;
+  ownerToken?: string;
   status: 'ready' | 'error';
   error?: string;
 }
@@ -72,6 +73,22 @@ function formatSandboxError(status: number, body: string): Error {
 const SANDBOX_BASE = '/api/sandbox';
 const DEFAULT_TIMEOUT_MS = 30_000; // 30s for most operations
 const EXEC_TIMEOUT_MS = 120_000;   // 120s for command execution
+let sandboxOwnerToken: string | null = null;
+
+export function setSandboxOwnerToken(token: string | null): void {
+  sandboxOwnerToken = token && token.trim() ? token.trim() : null;
+}
+
+export function getSandboxOwnerToken(): string | null {
+  return sandboxOwnerToken;
+}
+
+function withOwnerToken(body: Record<string, unknown>): Record<string, unknown> {
+  if (!sandboxOwnerToken) {
+    throw new Error('Sandbox access token missing. Start or reconnect the sandbox session.');
+  }
+  return { ...body, owner_token: sandboxOwnerToken };
+}
 
 // --- Retry configuration ---
 
@@ -199,16 +216,17 @@ export async function createSandbox(
   branch?: string,
   githubToken?: string,
 ): Promise<SandboxSession> {
-  const data = await sandboxFetch<{ sandbox_id: string | null; status?: string; error?: string }>(
+  const data = await sandboxFetch<{ sandbox_id: string | null; owner_token?: string; status?: string; error?: string }>(
     'create',
     { repo, branch: branch || 'main', github_token: githubToken || '' },
   );
 
-  if (!data.sandbox_id) {
+  if (!data.sandbox_id || !data.owner_token) {
     return { sandboxId: '', status: 'error', error: data.error || 'Unknown error' };
   }
 
-  return { sandboxId: data.sandbox_id, status: 'ready' };
+  setSandboxOwnerToken(data.owner_token);
+  return { sandboxId: data.sandbox_id, ownerToken: data.owner_token, status: 'ready' };
 }
 
 export async function execInSandbox(
@@ -219,11 +237,11 @@ export async function execInSandbox(
   // API returns snake_case, we need camelCase
   const raw = await sandboxFetch<{ stdout: string; stderr: string; exit_code: number; truncated: boolean }>(
     'exec',
-    {
+    withOwnerToken({
       sandbox_id: sandboxId,
       command,
       workdir: workdir || '/workspace',
-    },
+    }),
     EXEC_TIMEOUT_MS,
   );
   return {
@@ -239,6 +257,7 @@ export async function readFromSandbox(
   path: string,
 ): Promise<FileReadResult> {
   return sandboxFetch<FileReadResult>('read', {
+    ...withOwnerToken({}),
     sandbox_id: sandboxId,
     path,
   });
@@ -256,6 +275,7 @@ export async function writeToSandbox(
   content: string,
 ): Promise<WriteResult> {
   return sandboxFetch<WriteResult>('write', {
+    ...withOwnerToken({}),
     sandbox_id: sandboxId,
     path,
     content,
@@ -266,6 +286,7 @@ export async function getSandboxDiff(
   sandboxId: string,
 ): Promise<DiffResult> {
   return sandboxFetch<DiffResult>('diff', {
+    ...withOwnerToken({}),
     sandbox_id: sandboxId,
   });
 }
@@ -273,9 +294,12 @@ export async function getSandboxDiff(
 export async function cleanupSandbox(
   sandboxId: string,
 ): Promise<{ ok: boolean }> {
-  return sandboxFetch<{ ok: boolean }>('cleanup', {
+  const result = await sandboxFetch<{ ok: boolean }>('cleanup', {
+    ...withOwnerToken({}),
     sandbox_id: sandboxId,
   });
+  setSandboxOwnerToken(null);
+  return result;
 }
 
 // --- File browser operations ---
@@ -292,6 +316,7 @@ export async function listDirectory(
   path: string = '/workspace',
 ): Promise<FileEntry[]> {
   const data = await sandboxFetch<{ entries: FileEntry[]; error?: string }>('list', {
+    ...withOwnerToken({}),
     sandbox_id: sandboxId,
     path,
   });
@@ -304,6 +329,7 @@ export async function deleteFromSandbox(
   path: string,
 ): Promise<void> {
   const data = await sandboxFetch<{ ok: boolean; error?: string }>('delete', {
+    ...withOwnerToken({}),
     sandbox_id: sandboxId,
     path,
   });

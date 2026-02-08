@@ -841,10 +841,21 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
           setAgentStatus({ active: true, phase: 'Committing & pushing...' });
 
           try {
+            const normalizedCommitMessage = action.commitMessage.replace(/[\r\n]+/g, ' ').trim();
+            if (!normalizedCommitMessage) {
+              updateCardInMessage(chatId, action.messageId, action.cardIndex, (card) => {
+                if (card.type !== 'commit-review') return card;
+                return { ...card, data: { ...card.data, status: 'error', error: 'Commit message cannot be empty.' } as CommitReviewCardData };
+              });
+              return;
+            }
+
+            const safeCommitMessage = normalizedCommitMessage.replace(/'/g, `'\"'\"'`);
+
             // Step 2: Commit in sandbox
             const commitResult = await execInSandbox(
               sandboxId,
-              `cd /workspace && git add -A && git commit -m "${action.commitMessage.replace(/"/g, '\\"')}"`,
+              `cd /workspace && git add -A && git commit -m '${safeCommitMessage}'`,
             );
 
             if (commitResult.exitCode !== 0) {

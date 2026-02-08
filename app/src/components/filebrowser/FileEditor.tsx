@@ -12,6 +12,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Save, RotateCcw, AlertCircle, Check, FileCode } from 'lucide-react';
 import { toast } from 'sonner';
 import { getFileEditability, isBinaryContent, formatFileSize } from '@/lib/file-utils';
+import { readFromSandbox } from '@/lib/sandbox-client';
 import type { FileEntry } from '@/types';
 
 interface FileEditorProps {
@@ -52,18 +53,7 @@ export function FileEditor({ file, sandboxId, onBack, onSave }: FileEditorProps)
     setError(null);
 
     try {
-      const res = await fetch('/api/sandbox/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sandbox_id: sandboxId, path: file.path }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Failed to load file: ${text}`);
-      }
-
-      const data = await res.json();
+      const data = await readFromSandbox(sandboxId, file.path) as { content?: string };
       
       if (!data.content) {
         throw new Error('File is empty or could not be read');

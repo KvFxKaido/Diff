@@ -11,6 +11,8 @@ Deploy: cd sandbox && python -m modal deploy app.py
 import modal
 import base64
 import json
+import hmac
+import secrets
 import urllib.request
 
 app = modal.App("push-sandbox")
@@ -31,6 +33,7 @@ sandbox_image = (
 
 # Image for the web endpoint functions themselves (needs FastAPI)
 endpoint_image = modal.Image.debian_slim(python_version="3.12").pip_install("fastapi[standard]")
+OWNER_TOKEN_FILE = "/tmp/push-owner-token"
 
 
 def _fetch_github_user(token: str) -> tuple[str, str]:
@@ -51,6 +54,44 @@ def _fetch_github_user(token: str) -> tuple[str, str]:
         return name, email
     except Exception:
         return "Push User", "sandbox@push.app"
+
+
+def _issue_owner_token(sb: modal.Sandbox) -> str | None:
+    token = secrets.token_urlsafe(32)
+    p = sb.exec(
+        "python3",
+        "-c",
+        (
+            "import pathlib,sys;"
+            f"p=pathlib.Path('{OWNER_TOKEN_FILE}');"
+            "p.write_text(sys.argv[1], encoding='utf-8');"
+            "p.chmod(0o600)"
+        ),
+        token,
+    )
+    p.wait()
+    if p.returncode != 0:
+        return None
+    return token
+
+
+def _validate_owner_token(sb: modal.Sandbox, provided_token: str) -> bool:
+    if not provided_token:
+        return False
+    p = sb.exec(
+        "python3",
+        "-c",
+        (
+            "import pathlib;"
+            f"p=pathlib.Path('{OWNER_TOKEN_FILE}');"
+            "print(p.read_text(encoding='utf-8') if p.exists() else '')"
+        ),
+    )
+    p.wait()
+    if p.returncode != 0:
+        return False
+    expected = p.stdout.read().strip()
+    return bool(expected) and hmac.compare_digest(expected, str(provided_token))
 
 
 @app.function(image=endpoint_image)
@@ -94,7 +135,12 @@ def create(data: dict):
     sb.exec("git", "config", "--global", "user.name", name).wait()
     sb.exec("git", "config", "--global", "user.email", email).wait()
 
-    return {"sandbox_id": sb.object_id, "status": "ready"}
+    owner_token = _issue_owner_token(sb)
+    if not owner_token:
+        sb.terminate()
+        return {"error": "Failed to initialize sandbox access token", "sandbox_id": None}
+
+    return {"sandbox_id": sb.object_id, "owner_token": owner_token, "status": "ready"}
 
 
 @app.function(image=endpoint_image)
@@ -102,6 +148,7 @@ def create(data: dict):
 def exec_command(data: dict):
     """Run a command in an existing sandbox."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
     command = data.get("command", "")
     workdir = data.get("workdir", "/workspace")
 
@@ -109,6 +156,8 @@ def exec_command(data: dict):
         return {"error": "Missing sandbox_id or command", "exit_code": -1}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"error": "Unauthorized sandbox access", "exit_code": -1}
     p = sb.exec("bash", "-c", f"cd {workdir} && {command}")
     p.wait()
 
@@ -128,12 +177,15 @@ def exec_command(data: dict):
 def read_file(data: dict):
     """Read a file from the sandbox."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
     path = data.get("path", "")
 
     if not sandbox_id or not path:
         return {"error": "Missing sandbox_id or path"}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"error": "Unauthorized sandbox access", "content": ""}
     p = sb.exec("cat", path)
     p.wait()
 
@@ -150,6 +202,7 @@ def read_file(data: dict):
 def write_file(data: dict):
     """Write a file in the sandbox."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
     path = data.get("path", "")
     content = data.get("content", "")
 
@@ -157,6 +210,8 @@ def write_file(data: dict):
         return {"ok": False, "error": "Missing sandbox_id or path"}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"ok": False, "error": "Unauthorized sandbox access"}
 
     # Escape single quotes in path for shell safety
     safe_path = path.replace("'", "'\\''")
@@ -201,11 +256,14 @@ def write_file(data: dict):
 def get_diff(data: dict):
     """Get git diff of all changes."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
 
     if not sandbox_id:
         return {"error": "Missing sandbox_id", "diff": ""}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"error": "Unauthorized sandbox access", "diff": ""}
 
     # Step 1: Clear stale index lock (left by crashed git operations)
     sb.exec("bash", "-c", "rm -f /workspace/.git/index.lock").wait()
@@ -247,50 +305,80 @@ def get_diff(data: dict):
 def list_dir(data: dict):
     """List directory contents with metadata."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
     path = data.get("path", "/workspace")
 
     if not sandbox_id:
         return {"error": "Missing sandbox_id", "entries": []}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"error": "Unauthorized sandbox access", "entries": []}
+    script = """
+import json
+import os
+import sys
 
-    # Output format per line: TYPE\tSIZE\tNAME (d=dir, f=file)
-    # Use printf (not echo) — bash echo doesn't interpret \t
-    cmd = (
-        f"cd '{path}' 2>/dev/null && "
-        "for f in * .*; do "
-        "  [ \"$f\" = '.' ] || [ \"$f\" = '..' ] || [ \"$f\" = '*' ] && continue; "
-        "  if [ -d \"$f\" ]; then printf 'd\\t0\\t%s\\n' \"$f\"; "
-        "  elif [ -f \"$f\" ]; then stat --printf 'f\\t%s\\t%n\\n' \"$f\" 2>/dev/null || printf 'f\\t0\\t%s\\n' \"$f\"; "
-        "  fi; "
-        "done"
-    )
+target = sys.argv[1]
 
-    p = sb.exec("bash", "-c", cmd)
+try:
+    entries = []
+    with os.scandir(target) as it:
+        for entry in it:
+            if entry.name in (".", ".."):
+                continue
+
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    entries.append({"name": entry.name, "type": "directory", "size": 0})
+                elif entry.is_file(follow_symlinks=False):
+                    size = 0
+                    try:
+                        size = entry.stat(follow_symlinks=False).st_size
+                    except Exception:
+                        size = 0
+                    entries.append({"name": entry.name, "type": "file", "size": size})
+            except Exception:
+                continue
+
+    entries.sort(key=lambda e: (0 if e["type"] == "directory" else 1, e["name"].lower()))
+    print(json.dumps({"ok": True, "entries": entries}))
+except Exception as exc:
+    print(json.dumps({"ok": False, "error": str(exc)}))
+"""
+
+    p = sb.exec("python3", "-c", script, path)
     p.wait()
 
     if p.returncode != 0:
         stderr = p.stderr.read()
         return {"error": f"List failed: {stderr}", "entries": []}
 
+    stdout = p.stdout.read().strip()
+    if not stdout:
+        return {"entries": []}
+
+    try:
+        parsed = json.loads(stdout)
+    except Exception:
+        return {"error": "List failed: invalid response from sandbox", "entries": []}
+
+    if not parsed.get("ok"):
+        return {"error": f"List failed: {parsed.get('error', 'Unknown error')}", "entries": []}
+
+    base = path.rstrip("/") or "/"
     entries = []
-    stdout = p.stdout.read()
-    for line in stdout.strip().split("\n"):
-        if not line:
+    for item in parsed.get("entries", []):
+        name = item.get("name", "")
+        if not name:
             continue
-        parts = line.split("\t", 2)
-        if len(parts) != 3:
-            continue
-        entry_type, size_str, name = parts
+        entry_path = f"/{name}" if base == "/" else f"{base}/{name}"
         entries.append({
             "name": name,
-            "path": f"{path.rstrip('/')}/{name}",
-            "type": "directory" if entry_type == "d" else "file",
-            "size": int(size_str) if size_str.isdigit() else 0,
+            "path": entry_path,
+            "type": "directory" if item.get("type") == "directory" else "file",
+            "size": int(item.get("size", 0) or 0),
         })
-
-    # Sort: directories first, then files, both alphabetical
-    entries.sort(key=lambda e: (0 if e["type"] == "directory" else 1, e["name"].lower()))
 
     return {"entries": entries}
 
@@ -300,6 +388,7 @@ def list_dir(data: dict):
 def delete_file(data: dict):
     """Delete a file or directory from the sandbox."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
     path = data.get("path", "")
 
     if not sandbox_id or not path:
@@ -310,6 +399,8 @@ def delete_file(data: dict):
         return {"ok": False, "error": "Cannot delete workspace root"}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"ok": False, "error": "Unauthorized sandbox access"}
     p = sb.exec("rm", "-rf", path)
     p.wait()
 
@@ -321,10 +412,13 @@ def delete_file(data: dict):
 def cleanup(data: dict):
     """Terminate a sandbox."""
     sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
 
     if not sandbox_id:
         return {"ok": False, "error": "Missing sandbox_id"}
 
     sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"ok": False, "error": "Unauthorized sandbox access"}
     sb.terminate()
     return {"ok": True}

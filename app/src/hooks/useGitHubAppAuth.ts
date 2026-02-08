@@ -30,6 +30,16 @@ type UseGitHubAppAuth = {
   isAppAuth: boolean;
 };
 
+function formatAppTokenError(status: number, errorMessage: string): string {
+  if (status === 403 && errorMessage.includes('installation_id is not allowed')) {
+    return 'This installation is not authorized on this deployment. Ask the admin to add your installation ID to GITHUB_ALLOWED_INSTALLATION_IDS in Worker secrets.';
+  }
+  if (status === 403) {
+    return 'Access denied while fetching GitHub App token. Verify the app installation and Worker configuration.';
+  }
+  return errorMessage || `Failed to fetch token: ${status}`;
+}
+
 async function fetchAppToken(installationId: string): Promise<TokenResponse> {
   const res = await fetch('/api/github/app-token', {
     method: 'POST',
@@ -39,7 +49,8 @@ async function fetchAppToken(installationId: string): Promise<TokenResponse> {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to fetch token: ${res.status}`);
+    const rawError = typeof data.error === 'string' ? data.error : '';
+    throw new Error(formatAppTokenError(res.status, rawError));
   }
 
   return res.json();
@@ -102,7 +113,7 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
   }, []);
 
   // Fetch token for installation
-  const fetchAndSetToken = useCallback(async (instId: string) => {
+  const fetchAndSetToken = useCallback(async (instId: string): Promise<boolean> => {
     setLoading(true);
     setError(null);
 
@@ -125,12 +136,14 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
 
       // Schedule refresh
       scheduleRefresh(data.expires_at, instId);
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to authenticate';
       setError(message);
       // Clear invalid installation
       localStorage.removeItem(INSTALLATION_ID_KEY);
       setInstallationId('');
+      return false;
     } finally {
       setLoading(false);
     }
@@ -210,12 +223,7 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
         setError('Invalid installation ID — must be a number');
         return false;
       }
-      try {
-        await fetchAndSetToken(trimmed);
-        return true;
-      } catch {
-        return false;
-      }
+      return fetchAndSetToken(trimmed);
     },
     [fetchAndSetToken]
   );

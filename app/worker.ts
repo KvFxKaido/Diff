@@ -15,6 +15,7 @@ interface Env {
   // GitHub App credentials
   GITHUB_APP_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_ALLOWED_INSTALLATION_IDS?: string;
 }
 
 const MAX_BODY_SIZE_BYTES = 512 * 1024; // 512KB — supports file uploads via sandbox write
@@ -711,6 +712,14 @@ async function handleGitHubAppToken(request: Request, env: Env): Promise<Respons
   // Prevent overly long IDs (DoS protection)
   if (installationId.length > 20) {
     return Response.json({ error: 'installation_id too long' }, { status: 400 });
+  }
+
+  const allowedInstallationIds = (env.GITHUB_ALLOWED_INSTALLATION_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (allowedInstallationIds.length > 0 && !allowedInstallationIds.includes(installationId)) {
+    return Response.json({ error: 'installation_id is not allowed' }, { status: 403 });
   }
 
   try {

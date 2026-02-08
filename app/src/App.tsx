@@ -125,6 +125,22 @@ function App() {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [installIdInput, setInstallIdInput] = useState('');
   const [showInstallIdInput, setShowInstallIdInput] = useState(false);
+  const allowlistSecretCmd = 'npx wrangler secret put GITHUB_ALLOWED_INSTALLATION_IDS';
+
+  const copyAllowlistCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(allowlistSecretCmd);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = allowlistSecretCmd;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+  }, [allowlistSecretCmd]);
 
   // Screen state machine
   const screen: AppScreen = useMemo(() => {
@@ -567,7 +583,24 @@ function App() {
                         </>
                       )}
                       {appError && (
-                        <p className="text-xs text-red-400">{appError}</p>
+                        <div className="space-y-1">
+                          <p className="text-xs text-red-400">{appError}</p>
+                          {appError.includes('GITHUB_ALLOWED_INSTALLATION_IDS') && (
+                            <div className="text-[11px] text-[#71717a]">
+                              <p>Ask the deployment admin to run:</p>
+                              <div className="mt-1 flex items-center gap-2">
+                                <code className="font-mono text-[#a1a1aa]">{allowlistSecretCmd}</code>
+                                <button
+                                  type="button"
+                                  onClick={copyAllowlistCommand}
+                                  className="rounded border border-[#27272a] px-2 py-0.5 text-[10px] text-[#a1a1aa] hover:text-[#fafafa] hover:border-[#3f3f46]"
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
