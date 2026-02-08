@@ -954,6 +954,14 @@ const BROWSER_TOOL_PROTOCOL_LINE = browserToolEnabled
   ? '\n- sandbox_browser_screenshot(url, fullPage?) — Capture a webpage screenshot in the sandbox browser and return it as a card.\n- sandbox_browser_extract(url, instruction?) — Extract readable page text (or focused content with instruction) from a webpage.'
   : '';
 
+const BROWSER_RULES_BLOCK = browserToolEnabled
+  ? `- For webpage tasks with external URLs, prefer browser tools first:
+  - Use sandbox_browser_screenshot for visual capture
+  - Use sandbox_browser_extract for text extraction
+  - Do not default to sandbox_exec with curl/python for these unless browser tools fail
+`
+  : '';
+
 export const SANDBOX_TOOL_PROTOCOL = `
 SANDBOX TOOLS — You have access to a code sandbox (persistent container with the repo cloned).
 
@@ -988,11 +996,7 @@ Sandbox rules:
 - The repo is cloned to /workspace — use that as the working directory
 - You can install packages, run tests, build, lint — anything you'd do in a terminal
 - For multi-step tasks (edit + test), use multiple tool calls in sequence
-- For webpage tasks with external URLs, prefer browser tools first:
-  - Use sandbox_browser_screenshot for visual capture
-  - Use sandbox_browser_extract for text extraction
-  - Do not default to sandbox_exec with curl/python for these unless browser tools fail
-- sandbox_diff shows what you've changed — review before committing
+${BROWSER_RULES_BLOCK}- sandbox_diff shows what you've changed — review before committing
 - sandbox_prepare_commit triggers the Auditor for safety review, then presents a review card. The user approves or rejects via the UI.
 - If the push fails after a successful commit, use sandbox_push() to retry
 - Keep commands focused — avoid long-running servers or background processes

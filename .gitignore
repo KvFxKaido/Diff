@@ -12,6 +12,7 @@ build-out*.txt
 .env
 .env.*
 !.env.example
+!app/.env.production
 .dev.vars
 
 # claude code
