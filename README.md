@@ -1,5 +1,7 @@
 # Push
 
+[![Deploy Modal](https://github.com/KvFxKaido/Push/actions/workflows/deploy-modal.yml/badge.svg)](https://github.com/KvFxKaido/Push/actions/workflows/deploy-modal.yml)
+
 **Built for reviewing, deciding, and shipping — not typing thousands of lines on glass.**
 
 Push is a mobile-native AI coding agent with direct GitHub repo access. Chat with your codebase, review PRs, and orchestrate changes from anywhere. It is designed for **momentum and decision-making on the go**, giving you a manager's interface to your code when you're away from your desk.
