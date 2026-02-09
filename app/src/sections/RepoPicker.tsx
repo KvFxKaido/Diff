@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Lock, LogOut, Loader2, GitPullRequest, GitCommit } from 'lucide-react';
+import { Search, Lock, LogOut, Loader2, GitPullRequest, GitCommit, Box } from 'lucide-react';
 import type { RepoWithActivity, GitHubUser } from '@/types';
 
 interface RepoPickerProps {
@@ -8,6 +8,7 @@ interface RepoPickerProps {
   error?: string | null;
   onSelect: (repo: RepoWithActivity) => void;
   onDisconnect: () => void;
+  onSandboxMode: () => void;
   user: GitHubUser | null;
 }
 
@@ -47,6 +48,7 @@ export function RepoPicker({
   error,
   onSelect,
   onDisconnect,
+  onSandboxMode,
   user,
 }: RepoPickerProps) {
   const [search, setSearch] = useState('');
@@ -116,6 +118,20 @@ export function RepoPicker({
 
       {/* Repo list */}
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+        {/* New Sandbox option */}
+        <button
+          onClick={onSandboxMode}
+          className="flex w-full items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 text-left transition-all duration-200 hover:border-emerald-500/30 hover:bg-emerald-500/10 active:scale-[0.99] mb-3"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10">
+            <Box className="h-4 w-4 text-emerald-400" />
+          </div>
+          <div>
+            <span className="text-sm font-medium text-emerald-400">New Sandbox</span>
+            <p className="text-xs text-[#52525b] mt-0.5">Ephemeral workspace — no repo needed</p>
+          </div>
+        </button>
+
         {loading && repos.length === 0 ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-5 w-5 animate-spin text-[#52525b]" />

@@ -335,6 +335,44 @@ export async function cleanupSandbox(
   return result;
 }
 
+// --- Archive download ---
+
+const ARCHIVE_TIMEOUT_MS = 120_000; // 120s for large archive generation
+
+export interface ArchiveResult {
+  ok: boolean;
+  archiveBase64?: string;
+  sizeBytes?: number;
+  format?: string;
+  error?: string;
+}
+
+export async function downloadFromSandbox(
+  sandboxId: string,
+  path: string = '/workspace',
+): Promise<ArchiveResult> {
+  const raw = await sandboxFetch<{
+    ok: boolean;
+    archive_base64?: string;
+    size_bytes?: number;
+    format?: string;
+    error?: string;
+  }>('download', {
+    ...withOwnerToken({}),
+    sandbox_id: sandboxId,
+    path,
+    format: 'tar.gz',
+  }, ARCHIVE_TIMEOUT_MS);
+
+  return {
+    ok: raw.ok,
+    archiveBase64: raw.archive_base64,
+    sizeBytes: raw.size_bytes,
+    format: raw.format,
+    error: raw.error,
+  };
+}
+
 // --- File browser operations ---
 
 export interface FileEntry {

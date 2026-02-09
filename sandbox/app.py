@@ -13,6 +13,7 @@ import base64
 import json
 import hmac
 import secrets
+import os
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -40,6 +41,7 @@ sandbox_image = (
 endpoint_image = modal.Image.debian_slim(python_version="3.12").pip_install("fastapi[standard]", "playwright")
 OWNER_TOKEN_FILE = "/tmp/push-owner-token"
 MAX_SCREENSHOT_BYTES = 1_500_000
+MAX_ARCHIVE_BYTES = 100_000_000
 MAX_EXTRACT_CHARS = 20_000
 ALLOWED_DOMAINS: set[str] = {"push.ishawnd.workers.dev"}
 LIST_DIR_SCRIPT = """
@@ -227,25 +229,29 @@ def create(data: dict):
     repo = data.get("repo", "")
     branch = data.get("branch", "main")
 
-    if not repo:
-        sb.terminate()
-        return {"error": "Missing repo", "sandbox_id": None}
+    if repo:
+        if github_token:
+            clone_url = f"https://x-access-token:{github_token}@github.com/{repo}.git"
+        else:
+            clone_url = f"https://github.com/{repo}.git"
 
-    if github_token:
-        clone_url = f"https://x-access-token:{github_token}@github.com/{repo}.git"
+        p = sb.exec("git", "clone", "--depth=50", "--branch", branch, clone_url, "/workspace")
+        p.wait()
+
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            sb.terminate()
+            return {"error": f"Clone failed: {stderr}", "sandbox_id": None}
     else:
-        clone_url = f"https://github.com/{repo}.git"
-
-    p = sb.exec("git", "clone", "--depth=50", "--branch", branch, clone_url, "/workspace")
-    p.wait()
-
-    if p.returncode != 0:
-        stderr = p.stderr.read()
-        sb.terminate()
-        return {"error": f"Clone failed: {stderr}", "sandbox_id": None}
+        p = sb.exec("mkdir", "-p", "/workspace")
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            sb.terminate()
+            return {"error": f"Workspace setup failed: {stderr}", "sandbox_id": None}
 
     # Configure git identity so commits work inside the sandbox
-    if github_token:
+    if repo and github_token:
         name, email = _fetch_github_user(github_token)
     else:
         name, email = "Push User", "sandbox@push.app"
@@ -721,3 +727,75 @@ def cleanup(data: dict):
         return {"ok": False, "error": "Unauthorized sandbox access"}
     sb.terminate()
     return {"ok": True}
+
+
+@app.function(image=endpoint_image)
+@modal.fastapi_endpoint(method="POST")
+def create_archive(data: dict):
+    """Create a base64-encoded tar.gz archive from a workspace path."""
+    sandbox_id = data.get("sandbox_id")
+    owner_token = data.get("owner_token", "")
+    path = str(data.get("path", "/workspace") or "/workspace")
+    archive_format = str(data.get("format", "tar.gz") or "tar.gz")
+
+    if not sandbox_id:
+        return {"ok": False, "error": "Missing sandbox_id"}
+    if archive_format != "tar.gz":
+        return {"ok": False, "error": "Unsupported format"}
+    if not path.startswith("/"):
+        return {"ok": False, "error": "Path must be absolute"}
+
+    resolved_path = os.path.realpath(path)
+    if resolved_path != "/workspace" and not resolved_path.startswith("/workspace/"):
+        return {"ok": False, "error": "Path must be within /workspace"}
+
+    sb = modal.Sandbox.from_id(sandbox_id)
+    if not _validate_owner_token(sb, owner_token):
+        return {"ok": False, "error": "Unauthorized sandbox access"}
+
+    try:
+        p = sb.exec(
+            "tar",
+            "czf",
+            "/tmp/archive.tar.gz",
+            "--exclude=.git",
+            "--exclude=node_modules",
+            "--exclude=__pycache__",
+            "--exclude=.venv",
+            "--exclude=dist",
+            "--exclude=build",
+            "-C",
+            resolved_path,
+            ".",
+        )
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"ok": False, "error": f"Archive creation failed: {stderr}"}
+
+        p = sb.exec("bash", "-c", "wc -c < /tmp/archive.tar.gz")
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"ok": False, "error": f"Archive size check failed: {stderr}"}
+
+        size_raw = p.stdout.read().strip()
+        size_bytes = int(size_raw) if size_raw.isdigit() else 0
+        if size_bytes > MAX_ARCHIVE_BYTES:
+            return {"ok": False, "error": f"Archive exceeds max size of {MAX_ARCHIVE_BYTES} bytes"}
+
+        p = sb.exec("base64", "/tmp/archive.tar.gz")
+        p.wait()
+        if p.returncode != 0:
+            stderr = p.stderr.read()
+            return {"ok": False, "error": f"Archive encoding failed: {stderr}"}
+
+        archive_base64 = p.stdout.read().replace("\n", "")
+        return {
+            "ok": True,
+            "archive_base64": archive_base64,
+            "size_bytes": size_bytes,
+            "format": "tar.gz",
+        }
+    finally:
+        sb.exec("rm", "-f", "/tmp/archive.tar.gz").wait()

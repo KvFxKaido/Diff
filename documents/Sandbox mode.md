@@ -16,43 +16,46 @@ The user can then choose what happens next:
 
 - keep exploring
 - download files
-- create a new GitHub repo
 
-Nothing is promoted automatically.
+Nothing is promoted automatically. GitHub is not involved in v1.
 
 ---
 
 ## Core Decisions (v1)
 
 1. Sandbox Mode uses a real Modal container and writable filesystem.
-2. Sandbox Mode is not connected to a GitHub repo by default.
-3. GitHub actions are blocked until the user explicitly chooses promotion.
+2. Sandbox Mode is not connected to a GitHub repo.
+3. GitHub tools are not available in sandbox mode.
 4. Session data is ephemeral and expires with sandbox lifecycle.
-5. Promotion is always explicit and user-initiated.
+5. Sandbox Mode is the primary onboarding experience — no GitHub auth required to start.
+6. The only export path is zip download. In-app repo creation is deferred to v2.
 
 ---
 
-## Entry Point
+## Entry Points
 
-Sandbox Mode appears in the repo picker as a first-class option:
+Sandbox Mode has two entry points, serving different user states.
 
-`New Sandbox`
+### 1) Onboarding Screen (unauthenticated — v1 priority)
+
+New users see a prominent "Try it now" action on the onboarding screen, before any GitHub connection.
+This is the primary v1 entry point.
 
 Selecting it:
 
-1. starts a Modal sandbox session
-2. ensures an empty workspace at `/workspace`
-3. opens chat with sandbox tools enabled
-4. shows a clear status label:
+1. skips GitHub auth entirely
+2. starts a Modal sandbox session
+3. ensures an empty workspace at `/workspace`
+4. opens chat with sandbox tools enabled
+5. shows a clear status label: `Sandbox — ephemeral, not connected to GitHub`
 
-`Sandbox — ephemeral, not connected to GitHub`
+### 2) Repo Picker (authenticated)
 
-Optional seed file:
+For users already connected to GitHub, Sandbox Mode appears in the repo picker as a first-class option:
 
-- `/workspace/scratch.txt` with neutral copy:
-  - "This is an ephemeral sandbox."
-  - "Create anything. Delete anything."
-  - "Nothing is committed unless you choose."
+`New Sandbox`
+
+Selecting it follows the same flow as above (steps 2-5).
 
 ---
 
@@ -66,9 +69,9 @@ Optional seed file:
 - iterate on multiple approaches
 - discard work with no side effects
 
-### Blocked (until promotion)
+### Blocked
 
-- GitHub API tools
+- all GitHub API tools
 - commit and push actions
 - language implying permanence by default
 
@@ -79,9 +82,11 @@ The assistant should behave as a collaborative thinking partner, not an auto-shi
 ## Session Lifecycle
 
 - sandbox lifetime follows existing container policy (currently 30 minutes)
-- session is treated as temporary and may expire
-- if expired, user can start a new sandbox
-- no implicit persistence to GitHub
+- a visible countdown or warning is shown when ~5 minutes remain
+- if expired, workspace contents are lost — the user is informed clearly and can start a new sandbox
+- no implicit persistence to GitHub or anywhere else
+
+Known limitation: 30-minute lifetime may frustrate longer prototyping sessions. This is a Modal container policy constraint. Mitigation options (post-v1): session extension, or periodic auto-snapshot to browser storage.
 
 Optional future enhancement (not v1):
 
@@ -89,13 +94,12 @@ Optional future enhancement (not v1):
 
 ---
 
-## Promotion Paths
+## Export
 
-Sandbox Mode has three explicit user actions:
+Sandbox Mode has two user actions:
 
 1. Keep Exploring
-2. Download Files (.zip)
-3. Create Repo from Sandbox
+2. Download Files (.tar.gz)
 
 There is no automatic next step.
 
@@ -104,28 +108,16 @@ There is no automatic next step.
 - remain in current sandbox
 - no state transition
 
-### 2) Download Files (.zip)
+### 2) Download Files (.tar.gz)
 
-- user can download workspace snapshot
-- no repo is created
+- downloads full `/workspace` contents minus temp artifacts (`.git`, `node_modules`, `__pycache__`, `.venv`, `dist`, `build`)
+- archive is built server-side via `tar czf` with exclusions, base64-encoded, and sent to the client
+- 100MB archive size limit enforced server-side
 - sandbox can continue running after download
-
-### 3) Create Repo from Sandbox
-
-Flow:
-
-1. user confirms repo name
-2. user confirms visibility (private/public)
-3. user reviews selected files to include
-4. user confirms creation
-5. system creates repo and uploads selected files
-6. system transitions to normal repo-locked mode
-
-Post-create behavior:
-
-- sandbox session is frozen for safety and clarity
-- newly created repo becomes active context
-- standard Push behavior resumes (tools, sandbox, coder, auditor)
+- three download affordances:
+  - persistent download button in the sandbox header (always visible when sandbox is ready)
+  - download button in the expiry warning banner (visible at ~5 min remaining)
+  - AI-invocable `sandbox_download` tool (renders a download card in chat)
 
 ---
 
@@ -135,7 +127,7 @@ Post-create behavior:
   - "Nothing is committed unless you choose."
 - clear mode badge in header:
   - "Sandbox"
-- promotion actions are visible but never forced
+- download action is visible but never forced
 - no scary warnings, no fake urgency
 - mobile-first flow with minimal steps
 
@@ -145,10 +137,13 @@ Post-create behavior:
 
 When in Sandbox Mode:
 
-- assistant may use sandbox tools
-- assistant must avoid GitHub actions unless user initiates promotion
+- assistant may use sandbox tools (file ops, exec, browser tools)
+- assistant must not use GitHub tools
 - assistant should surface assumptions and tradeoffs
 - assistant should prefer tentative language for structure proposals
+- system prompt omits workspace context (no active repo, no AGENTS.md, no file tree) — replaced with a sandbox-specific preamble that describes the ephemeral environment and available tools
+- Coder `agentsMdRef` is empty; Coder operates with sandbox tools only
+- Auditor is not invoked (no commits to audit)
 
 Examples:
 
@@ -159,43 +154,58 @@ Examples:
 
 ## Non-Goals (v1)
 
-- automatic repo creation
-- automatic commits or push
+- in-app GitHub repo creation (latency and sync concerns make this a poor first experience)
+- automatic repo creation, commits, or push
 - hidden persistence semantics
 - heavy templates or opinionated starters
-- turning sandbox into a mandatory onboarding gate
+- multiple parallel sandbox sessions
+- telemetry (no analytics infrastructure exists yet — revisit when a provider is chosen)
 
 ---
 
-## Telemetry (v1)
+## Future Considerations (post-v1)
 
-Track these events:
-
-- sandbox_created
-- sandbox_expired
-- sandbox_download_zip
-- sandbox_promotion_started
-- sandbox_repo_created
-- sandbox_promotion_abandoned
-
-Purpose:
-
-- measure where users find value
-- identify friction in promotion flow
-- validate sandbox-first product hypothesis
+- **Create Repo from Sandbox** — in-app promotion to GitHub repo (requires solving upload latency, sandbox-to-repo state transition, and new sandbox spin-up with cloned repo)
+- starter templates (e.g. "React app", "Python CLI") as optional scaffolds
+- session restore if sandbox is still alive
+- sandbox lifetime extension or auto-snapshot
+- telemetry for sandbox usage patterns
+- multiple parallel sandbox drafts
 
 ---
 
-## Open Questions
+## Implementation Notes (v1)
 
-1. Should users be able to create multiple parallel sandbox drafts?
-2. Should download include ignored/temp files or only a curated set?
-3. Should promotion allow selecting a subfolder rather than whole workspace?
-4. Should we add optional starter templates after v1?
+Status: **implemented** (2026-02-09)
+
+### Files changed
+
+| Layer | File | What |
+|---|---|---|
+| Backend | `sandbox/app.py` | `create()` supports empty repo; new `create_archive()` endpoint |
+| Worker | `app/worker.ts` | `download: 'create-archive'` route |
+| Client | `app/src/lib/sandbox-client.ts` | `downloadFromSandbox()` function |
+| Tools | `app/src/lib/sandbox-tools.ts` | `sandbox_download` tool (detect/validate/execute) |
+| Types | `app/src/types/index.ts` | `SandboxDownloadCardData`, `ChatCard` union member |
+| State | `app/src/hooks/useSandbox.ts` | Supports `''` as ephemeral repo; exports `createdAt` |
+| Prompt | `app/src/lib/orchestrator.ts` | Sandbox-specific preamble (no GitHub tools) |
+| App | `app/src/App.tsx` | `isSandboxMode` flag, entry points, header badge, download button, expiry banner |
+| Entry | `app/src/sections/OnboardingScreen.tsx` | "Try it now" button |
+| Entry | `app/src/sections/RepoPicker.tsx` | "New Sandbox" card |
+| Card | `app/src/components/cards/SandboxDownloadCard.tsx` | Download card UI (new file) |
+| Card | `app/src/components/cards/CardRenderer.tsx` | `sandbox-download` case |
+| Banner | `app/src/components/chat/SandboxExpiryBanner.tsx` | Countdown + download + restart (new file) |
+
+### Deviations from original spec
+
+- Export format is `.tar.gz`, not `.zip` — tar is native to the Linux sandbox and avoids adding zip tooling to the Modal image.
+- Download is available via three affordances (header button, expiry banner, AI tool) instead of a single action.
+- Expiry warning includes both a countdown timer and a one-click download button.
 
 ---
 
 ## Summary
 
 Sandbox Mode is the place to think, test, and shape ideas with real execution but zero default commitment.
-Promotion is an explicit user decision: download artifacts or create a real repo.
+It doubles as the primary onboarding experience — new users can try Push without connecting GitHub.
+When the user wants to keep their work, they download a tar.gz and take it to GitHub on their own terms.

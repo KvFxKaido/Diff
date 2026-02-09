@@ -9,7 +9,7 @@ Use this file to quickly identify which planning docs are authoritative vs histo
 - `Memvid Integration Proposal.md`
   - Status: Consolidated draft for memory strategy.
 - `Sandbox mode.md`
-  - Status: Active v1 product spec for Sandbox Mode.
+  - Status: v1 implemented. Contains original spec + implementation notes.
 - `SECURITY_AUDIT.md`
   - Status: Security findings and mitigation history.
 

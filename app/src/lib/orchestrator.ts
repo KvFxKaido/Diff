@@ -395,6 +395,13 @@ function toLLMMessages(
     if (hasSandbox) {
       systemContent += '\n' + SANDBOX_TOOL_PROTOCOL;
     }
+  } else if (hasSandbox) {
+    // Sandbox mode (no repo): include sandbox tools with ephemeral preamble, no GitHub tools
+    systemContent += '\n\nYou are in **Sandbox Mode** — an ephemeral Linux workspace with no GitHub repo connected.'
+      + ' You have full access to the sandbox filesystem and can create, edit, and run files freely.'
+      + ' Nothing is saved or committed unless the user explicitly downloads their work.'
+      + ' Be a collaborative thinking partner: surface assumptions, propose structure, iterate freely.'
+      + '\n' + SANDBOX_TOOL_PROTOCOL;
   }
 
   // Always include scratchpad context and tools (even if empty)

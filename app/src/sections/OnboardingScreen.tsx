@@ -6,6 +6,7 @@ interface OnboardingScreenProps {
   onConnect: (pat: string) => Promise<boolean>;
   onConnectOAuth: () => void;
   onDemo: () => void;
+  onSandboxMode: () => void;
   onInstallApp: () => void;
   onConnectInstallationId: (installationId: string) => Promise<boolean>;
   loading: boolean;
@@ -18,6 +19,7 @@ export function OnboardingScreen({
   onConnect,
   onConnectOAuth,
   onDemo,
+  onSandboxMode,
   onInstallApp,
   onConnectInstallationId,
   loading,
@@ -239,7 +241,7 @@ export function OnboardingScreen({
           )}
         </div>
 
-        {/* Divider + demo */}
+        {/* Divider + sandbox */}
         <div className="mt-8">
           <div className="flex items-center gap-3 mb-6">
             <div className="flex-1 h-px bg-[#1a1a1a]" />
@@ -248,11 +250,14 @@ export function OnboardingScreen({
           </div>
 
           <button
-            onClick={onDemo}
-            className="w-full rounded-xl border border-[#1a1a1a] bg-transparent px-4 py-3 text-sm text-[#71717a] transition-all duration-200 hover:border-[#27272a] hover:text-[#a1a1aa] active:scale-[0.98]"
+            onClick={onSandboxMode}
+            className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm font-medium text-emerald-400 transition-all duration-200 hover:border-emerald-500/50 hover:bg-emerald-500/10 active:scale-[0.98]"
           >
-            Try Demo Mode
+            Try it now — no account needed
           </button>
+          <p className="text-xs text-[#52525b] text-center mt-2">
+            Ephemeral sandbox. Nothing is saved unless you choose.
+          </p>
         </div>
       </div>
     </div>

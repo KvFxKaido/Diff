@@ -146,6 +146,7 @@ export type ChatCard =
   | { type: 'type-check'; data: TypeCheckCardData }
   | { type: 'browser-screenshot'; data: BrowserScreenshotCardData }
   | { type: 'browser-extract'; data: BrowserExtractCardData }
+  | { type: 'sandbox-download'; data: SandboxDownloadCardData }
   | { type: 'workflow-runs'; data: WorkflowRunsCardData }
   | { type: 'workflow-logs'; data: WorkflowLogsCardData };
 
@@ -261,6 +262,13 @@ export interface BrowserExtractCardData {
   content: string;
   truncated: boolean;
   error?: BrowserToolError;
+}
+
+export interface SandboxDownloadCardData {
+  path: string;
+  format: string;
+  sizeBytes: number;
+  archiveBase64: string;
 }
 
 export interface DiffPreviewCardData {

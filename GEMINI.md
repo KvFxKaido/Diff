@@ -2,11 +2,6 @@
 
 **Mobile-native AI coding agent with direct GitHub repo access.**
 
-## Planning Source of Truth
-
-*   `ROADMAP.md` (repo root) is the canonical, tracked plan for active work.
-*   `documents/` is a draft/workspace area; use `documents/README.md` to identify active vs historical docs.
-
 Push is a personal chat interface backed by role-based AI agents (Orchestrator, Coder, Auditor) designed for reviewing PRs, exploring codebases, and shipping changes from a mobile device.
 
 ## Project Overview
@@ -37,19 +32,10 @@ Push is a personal chat interface backed by role-based AI agents (Orchestrator, 
 ### Key Systems
 *   **Tool Protocol:** Prompt-engineered JSON tool blocks for GitHub and Sandbox interactions.
 *   **Sandbox:** Persistent Linux environment (via Modal) for cloning repos, running tests, and editing files.
+*   **Sandbox Mode:** Ephemeral workspace (no GitHub repo). Entry via onboarding or repo picker. GitHub tools blocked; 30-min lifetime with expiry warning. Download as tar.gz.
 *   **Browser Tools (Optional):** Sandbox-backed webpage screenshot + text extraction via Browserbase.
 *   **Scratchpad:** Shared persistent notepad for user/AI collaboration.
 *   **Context Management:** Token-budget rolling window with summarization.
-
-### Browserbase Status (from `documents/Browserbase Integration Spike.md`)
-*   [x] v1 complete and validated on deployed Worker + Modal
-*   [x] `sandbox_browser_screenshot` shipped (card UI + metadata)
-*   [x] `sandbox_browser_extract` shipped (card UI + bounded text extraction)
-*   [x] Browserbase credentials injected server-side via Worker secrets
-*   [x] Guardrails shipped (URL allowlist, private-network block, output caps)
-*   [x] Test suite shipped (97 tests across tool/client/routes/types)
-*   [ ] Validate on real mobile cellular networks (iOS Safari + Android Chrome)
-*   [ ] Progressively enable `VITE_BROWSER_TOOL_ENABLED` after latency/error checks
 
 ## Directory Structure
 
@@ -58,8 +44,8 @@ Push/
 ├── app/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── chat/      # Chat UI (Container, Input, Bubbles)
-│   │   │   ├── cards/     # Inline UI Cards (PR, Diff, Sandbox Output)
+│   │   │   ├── chat/      # Chat UI (Container, Input, Bubbles, SandboxExpiryBanner)
+│   │   │   ├── cards/     # Inline UI Cards (PR, Diff, Sandbox Output, SandboxDownloadCard)
 │   │   │   └── ui/        # shadcn/ui library
 │   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth)
 │   │   ├── lib/           # Core Logic
@@ -111,18 +97,8 @@ Push/
 *   **Cloudflare Worker:** `npx wrangler deploy` (from repo root)
 *   **Modal Sandbox:** `cd sandbox && python -m modal deploy app.py`
 
-### Environment Variables (`app/.env`)
-*   `VITE_MOONSHOT_API_KEY`: Kimi API Key
-*   `VITE_OLLAMA_API_KEY`: Ollama API Key
-*   `VITE_MISTRAL_API_KEY`: Mistral API Key
-*   `VITE_GITHUB_TOKEN`: GitHub Personal Access Token (Optional)
-*   `VITE_BROWSER_TOOL_ENABLED`: Optional prompt gate for browser tools (`true` to enable)
-*   `VITE_API_PROXY_TARGET`: Optional Vite `/api` proxy target (default: `http://127.0.0.1:8787`)
-
-### Worker Secrets (`wrangler secret put`)
-*   `MODAL_SANDBOX_BASE_URL`: Modal app base URL
-*   `BROWSERBASE_API_KEY`: Browserbase API key (for browser screenshot/extract routes)
-*   `BROWSERBASE_PROJECT_ID`: Browserbase project id
+### Environment
+Environment variables are in `app/.env` (local dev) and Cloudflare Worker secrets (production). API keys can also be set via the Settings UI.
 
 ## Coding Conventions
 *   **TypeScript:** Strict mode enabled. Explicit return types required on exported functions.

@@ -11,7 +11,7 @@
  * creating a new one. Sessions expire after 25 min (safety margin).
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createSandbox, cleanupSandbox, execInSandbox, setSandboxOwnerToken } from '@/lib/sandbox-client';
 
 export type SandboxStatus = 'idle' | 'creating' | 'ready' | 'error';
@@ -48,7 +48,8 @@ function loadSession(): PersistedSandboxSession | null {
     const raw = localStorage.getItem(SANDBOX_SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as PersistedSandboxSession;
-    if (!session.sandboxId || !session.ownerToken || !session.repoFullName || !session.createdAt) return null;
+    // repoFullName can be '' for sandbox mode (ephemeral, no repo)
+    if (!session.sandboxId || !session.ownerToken || !session.createdAt) return null;
     return session;
   } catch {
     return null;
@@ -76,7 +77,8 @@ export function useSandbox(activeRepoFullName?: string | null) {
   // Attempt to reconnect to a saved sandbox session on mount
   useEffect(() => {
     if (status !== 'idle') return;
-    if (!activeRepoFullName) return;
+    // null/undefined = no sandbox context yet; '' = sandbox mode (ephemeral)
+    if (activeRepoFullName == null) return;
     if (sandboxIdRef.current) return;
 
     const saved = loadSession();
@@ -132,7 +134,7 @@ export function useSandbox(activeRepoFullName?: string | null) {
 
   // Invalidate saved session when active repo changes
   useEffect(() => {
-    if (!activeRepoFullName) return;
+    if (activeRepoFullName == null) return;
     const saved = loadSession();
     if (saved && saved.repoFullName !== activeRepoFullName) {
       clearSession();
@@ -158,7 +160,8 @@ export function useSandbox(activeRepoFullName?: string | null) {
     setSandboxOwnerToken(null);
 
     try {
-      const token = getGitHubToken();
+      // Empty repo = sandbox mode (ephemeral workspace, no clone, no token needed)
+      const token = repo ? getGitHubToken() : '';
       const session = await createSandbox(repo, branch, token);
 
       if (session.status === 'error') {
@@ -205,11 +208,19 @@ export function useSandbox(activeRepoFullName?: string | null) {
     setError(null);
   }, []);
 
+  // Expose session createdAt for expiry warnings
+  const createdAt = useMemo(() => {
+    const saved = loadSession();
+    return saved?.createdAt ?? null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sandboxId]);
+
   return {
     sandboxId,
     status,
     error,
     start,
     stop,
+    createdAt,
   };
 }

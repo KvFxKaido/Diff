@@ -29,6 +29,7 @@ import {
   listDirectory,
   browserScreenshotInSandbox,
   browserExtractInSandbox,
+  downloadFromSandbox,
   type FileReadResult,
 } from './sandbox-client';
 import { runAuditor } from './auditor-agent';
@@ -93,7 +94,8 @@ export type SandboxToolCall =
   | { tool: 'sandbox_run_tests'; args: { framework?: string } }
   | { tool: 'sandbox_check_types'; args: Record<string, never> }
   | { tool: 'sandbox_browser_screenshot'; args: { url: string; fullPage?: boolean } }
-  | { tool: 'sandbox_browser_extract'; args: { url: string; instruction?: string } };
+  | { tool: 'sandbox_browser_extract'; args: { url: string; instruction?: string } }
+  | { tool: 'sandbox_download'; args: { path?: string } };
 
 // --- Validation ---
 
@@ -155,6 +157,9 @@ export function validateSandboxToolCall(parsed: unknown): SandboxToolCall | null
   }
   if (tool === 'sandbox_browser_extract' && browserUrl && browserToolEnabled) {
     return { tool: 'sandbox_browser_extract', args: { url: browserUrl, instruction: typeof args.instruction === 'string' ? args.instruction : undefined } };
+  }
+  if (tool === 'sandbox_download') {
+    return { tool: 'sandbox_download', args: { path: typeof args.path === 'string' ? args.path : undefined } };
   }
   return null;
 }
@@ -962,6 +967,29 @@ export async function executeSandboxToolCall(
         return { text: lines.join('\n'), card: { type: 'browser-extract', data: cardData } };
       }
 
+      case 'sandbox_download': {
+        const archivePath = call.args.path || '/workspace';
+        const result = await downloadFromSandbox(sandboxId, archivePath);
+
+        if (!result.ok || !result.archiveBase64) {
+          return { text: `[Tool Error] Download failed: ${result.error || 'Unknown error'}` };
+        }
+
+        const sizeKB = Math.round((result.sizeBytes || 0) / 1024);
+        return {
+          text: `[Tool Result — sandbox_download]\nArchive ready: ${result.format} (${sizeKB} KB)`,
+          card: {
+            type: 'sandbox-download',
+            data: {
+              path: archivePath,
+              format: result.format || 'tar.gz',
+              sizeBytes: result.sizeBytes || 0,
+              archiveBase64: result.archiveBase64,
+            },
+          },
+        };
+      }
+
       default:
         return { text: `[Tool Error] Unknown sandbox tool: ${String((call as { tool?: unknown }).tool ?? 'unknown')}` };
     }
@@ -999,7 +1027,8 @@ Additional tools available when sandbox is active:
 - sandbox_prepare_commit(message) — Prepare a commit for review. Gets diff, runs Auditor. If SAFE, returns a review card for user approval. Does NOT commit — user must approve via the UI.
 - sandbox_push() — Retry a failed push. Use this only if a push failed after approval. No Auditor needed (commit was already audited).
 - sandbox_run_tests(framework?) — Run the test suite. Auto-detects npm/pytest/cargo/go if framework not specified. Returns pass/fail counts and output.
-- sandbox_check_types() — Run type checker (tsc for TypeScript, pyright/mypy for Python). Auto-detects from config files. Returns errors with file:line locations.${BROWSER_TOOL_PROTOCOL_LINE}
+- sandbox_check_types() — Run type checker (tsc for TypeScript, pyright/mypy for Python). Auto-detects from config files. Returns errors with file:line locations.
+- sandbox_download(path?) — Download workspace files as a compressed archive (tar.gz). Path defaults to /workspace. Returns a download card the user can save.${BROWSER_TOOL_PROTOCOL_LINE}
 
 Compatibility aliases also work:
 - read_sandbox_file(path) → sandbox_read_file

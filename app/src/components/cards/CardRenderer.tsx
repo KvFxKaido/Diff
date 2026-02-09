@@ -17,6 +17,7 @@ import { TestResultsCard } from './TestResultsCard';
 import { TypeCheckCard } from './TypeCheckCard';
 import { BrowserScreenshotCard } from './BrowserScreenshotCard';
 import { BrowserExtractCard } from './BrowserExtractCard';
+import { SandboxDownloadCard } from './SandboxDownloadCard';
 import { WorkflowRunsCard } from './WorkflowRunsCard';
 import { WorkflowLogsCard } from './WorkflowLogsCard';
 
@@ -88,6 +89,8 @@ export function CardRenderer({ card, messageId, cardIndex, onAction }: CardRende
       return <BrowserScreenshotCard data={card.data} />;
     case 'browser-extract':
       return <BrowserExtractCard data={card.data} />;
+    case 'sandbox-download':
+      return <SandboxDownloadCard data={card.data} />;
     case 'workflow-runs':
       return <WorkflowRunsCard data={card.data} />;
     case 'workflow-logs':

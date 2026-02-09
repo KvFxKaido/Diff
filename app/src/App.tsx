@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Settings, Trash2, FolderOpen, Cpu, GitBranch, RefreshCw, Loader2 } from 'lucide-react';
+import { Settings, Trash2, FolderOpen, Cpu, GitBranch, RefreshCw, Loader2, Download } from 'lucide-react';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
 import { useGitHubAuth } from '@/hooks/useGitHubAuth';
@@ -14,13 +14,14 @@ import { getActiveProvider, getContextMode, setContextMode, type ContextMode } f
 import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
-import { readFromSandbox, execInSandbox } from '@/lib/sandbox-client';
+import { readFromSandbox, execInSandbox, downloadFromSandbox } from '@/lib/sandbox-client';
 import { fetchProjectInstructions } from '@/lib/github-tools';
 import { getSandboxStartMode, setSandboxStartMode, type SandboxStartMode } from '@/lib/sandbox-start-mode';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { RepoAndChatSelector } from '@/components/chat/RepoAndChatSelector';
 import { ScratchpadDrawer } from '@/components/chat/ScratchpadDrawer';
+import { SandboxExpiryBanner } from '@/components/chat/SandboxExpiryBanner';
 import { OnboardingScreen } from '@/sections/OnboardingScreen';
 import { RepoPicker } from '@/sections/RepoPicker';
 import { FileBrowser } from '@/sections/FileBrowser';
@@ -78,7 +79,7 @@ function App() {
     replace: scratchpad.replace,
     append: scratchpad.append,
   });
-  const sandbox = useSandbox(activeRepo?.full_name ?? null);
+  const sandbox = useSandbox(isSandboxMode ? '' : (activeRepo?.full_name ?? null));
   // PAT-based auth (fallback)
   const {
     token: patToken,
@@ -113,6 +114,7 @@ function App() {
   const { setKey: setMistralKey, clearKey: clearMistralKey, hasKey: hasMistralKey, model: mistralModel, setModel: setMistralModel } = useMistralConfig();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
+  const [isSandboxMode, setIsSandboxMode] = useState(false);
   const [kimiKeyInput, setKimiKeyInput] = useState('');
   const [ollamaKeyInput, setOllamaKeyInput] = useState('');
   const [ollamaModelInput, setOllamaModelInput] = useState('');
@@ -163,12 +165,13 @@ function App() {
 
   // Screen state machine
   const screen: AppScreen = useMemo(() => {
+    if (isSandboxMode) return showFileBrowser && sandbox.sandboxId ? 'file-browser' : 'chat';
     if (isDemo) return showFileBrowser && sandbox.sandboxId ? 'file-browser' : 'chat';
     if (!token) return 'onboarding';
     if (!activeRepo) return 'repo-picker';
     if (showFileBrowser && sandbox.sandboxId) return 'file-browser';
     return 'chat';
-  }, [token, activeRepo, isDemo, showFileBrowser, sandbox.sandboxId]);
+  }, [token, activeRepo, isDemo, isSandboxMode, showFileBrowser, sandbox.sandboxId]);
 
   // On PAT connect success: auto-sync repos
   const handleConnect = useCallback(
@@ -185,6 +188,43 @@ function App() {
     setIsDemo(true);
     syncRepos(); // Will use mock repos since no token
   }, [syncRepos]);
+
+  // Sandbox mode — ephemeral workspace, no GitHub auth required
+  const handleSandboxMode = useCallback(() => {
+    setIsSandboxMode(true);
+  }, []);
+
+  // Restart sandbox (for expiry recovery)
+  const handleSandboxRestart = useCallback(async () => {
+    await sandbox.stop();
+    sandbox.start('', 'main');
+  }, [sandbox]);
+
+  // Sandbox download handler (for header button + expiry banner)
+  const [sandboxDownloading, setSandboxDownloading] = useState(false);
+  const handleSandboxDownload = useCallback(async () => {
+    if (!sandbox.sandboxId || sandboxDownloading) return;
+    setSandboxDownloading(true);
+    try {
+      const result = await downloadFromSandbox(sandbox.sandboxId);
+      if (result.ok && result.archiveBase64) {
+        const raw = atob(result.archiveBase64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'application/gzip' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `workspace-${Date.now()}.tar.gz`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      // Best effort
+    } finally {
+      setSandboxDownloading(false);
+    }
+  }, [sandbox.sandboxId, sandboxDownloading]);
 
   // Repo selection from picker
   const handleSelectRepo = useCallback(
@@ -208,6 +248,7 @@ function App() {
     clearActiveRepo();
     deleteAllChats();
     setIsDemo(false);
+    setIsSandboxMode(false);
   }, [appDisconnect, patLogout, clearActiveRepo, deleteAllChats]);
 
   // --- Project instructions: two-phase loading ---
@@ -328,13 +369,21 @@ function App() {
   // Lazy sandbox auto-spin: creates sandbox on demand (called by useChat when sandbox tools are detected)
   const ensureSandbox = useCallback(async (): Promise<string | null> => {
     if (sandbox.sandboxId) return sandbox.sandboxId;
+    if (isSandboxMode) return sandbox.start('', 'main');
     if (!activeRepo) return null;
     return sandbox.start(activeRepo.full_name, activeRepo.default_branch);
-  }, [sandbox, activeRepo]);
+  }, [sandbox, activeRepo, isSandboxMode]);
 
   useEffect(() => {
     setEnsureSandbox(ensureSandbox);
   }, [ensureSandbox, setEnsureSandbox]);
+
+  // Auto-start sandbox when entering sandbox mode
+  useEffect(() => {
+    if (isSandboxMode && sandbox.status === 'idle' && !sandbox.sandboxId) {
+      sandbox.start('', 'main');
+    }
+  }, [isSandboxMode, sandbox.status, sandbox.sandboxId, sandbox.start]);
 
   // Sync repos on mount (for returning users who already have a token)
   useEffect(() => {
@@ -365,6 +414,7 @@ function App() {
           onConnect={handleConnect}
           onConnectOAuth={connectApp}
           onDemo={handleDemo}
+          onSandboxMode={handleSandboxMode}
           onInstallApp={installApp}
           onConnectInstallationId={setInstallationIdManually}
           loading={authLoading}
@@ -385,6 +435,7 @@ function App() {
           error={reposError}
           onSelect={handleSelectRepo}
           onDisconnect={handleDisconnect}
+          onSandboxMode={handleSandboxMode}
           user={validatedUser}
         />
       </div>
@@ -408,28 +459,49 @@ function App() {
 
   // ----- Chat screen -----
 
-  const isConnected = Boolean(token) || isDemo;
+  const isConnected = Boolean(token) || isDemo || isSandboxMode;
 
   return (
     <div className="flex h-dvh flex-col bg-[#000] safe-area-top safe-area-bottom">
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-[#111]">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <RepoAndChatSelector
-            repos={repos}
-            activeRepo={activeRepo}
-            onSelectRepo={handleSelectRepo}
-            conversations={conversations}
-            sortedChatIds={sortedChatIds}
-            activeChatId={activeChatId}
-            onSwitchChat={switchChat}
-            onNewChat={handleCreateNewChat}
-            onDeleteChat={deleteChat}
-          />
+          {isSandboxMode ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
+                <div className={`h-2 w-2 rounded-full ${sandbox.status === 'ready' ? 'bg-emerald-500' : sandbox.status === 'creating' ? 'bg-[#f59e0b] animate-pulse' : 'bg-[#52525b]'}`} />
+                <span className="text-xs font-medium text-[#a1a1aa]">Sandbox</span>
+              </div>
+              <span className="text-[10px] text-[#52525b]">ephemeral</span>
+              {sandbox.status === 'ready' && (
+                <button
+                  onClick={handleSandboxDownload}
+                  disabled={sandboxDownloading}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#52525b] transition-colors hover:text-emerald-400 hover:bg-[#0d0d0d] active:scale-95 disabled:opacity-50"
+                  title="Download workspace"
+                  aria-label="Download workspace"
+                >
+                  {sandboxDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                </button>
+              )}
+            </div>
+          ) : (
+            <RepoAndChatSelector
+              repos={repos}
+              activeRepo={activeRepo}
+              onSelectRepo={handleSelectRepo}
+              conversations={conversations}
+              sortedChatIds={sortedChatIds}
+              activeChatId={activeChatId}
+              onSwitchChat={switchChat}
+              onNewChat={handleCreateNewChat}
+              onDeleteChat={deleteChat}
+            />
+          )}
         </div>
         <div className="flex items-center gap-3">
           {/* File browser */}
-          {activeRepo && (
+          {(activeRepo || isSandboxMode) && (
             <button
               onClick={async () => {
                 if (sandbox.status === 'ready') {
@@ -487,6 +559,16 @@ function App() {
           </button>
         </div>
       </header>
+
+      {/* Sandbox expiry warning */}
+      {isSandboxMode && (
+        <SandboxExpiryBanner
+          createdAt={sandbox.createdAt}
+          sandboxId={sandbox.sandboxId}
+          sandboxStatus={sandbox.status}
+          onRestart={handleSandboxRestart}
+        />
+      )}
 
       {/* Chat */}
       <ChatContainer
