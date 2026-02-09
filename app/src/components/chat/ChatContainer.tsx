@@ -9,6 +9,7 @@ interface ChatContainerProps {
   messages: ChatMessage[];
   agentStatus: AgentStatus;
   activeRepo?: ActiveRepo | null;
+  isSandboxMode?: boolean;
   onSuggestion?: (text: string) => void;
   onCardAction?: (action: CardAction) => void;
   isConsoleOpen?: boolean;
@@ -17,12 +18,21 @@ interface ChatContainerProps {
 
 function EmptyState({
   activeRepo,
+  isSandboxMode,
   onSuggestion,
 }: {
   activeRepo?: ActiveRepo | null;
+  isSandboxMode?: boolean;
   onSuggestion?: (text: string) => void;
 }) {
   const suggestions = useMemo(() => {
+    if (isSandboxMode) {
+      return [
+        "I'm not sure what I'm building yet — let's explore",
+        'Help me prototype an idea',
+        'I want to test an idea quickly',
+      ];
+    }
     if (activeRepo) {
       return [
         `Show open PRs on ${activeRepo.name}`,
@@ -35,7 +45,7 @@ function EmptyState({
       'What changed in main today?',
       'Show my open pull requests',
     ];
-  }, [activeRepo]);
+  }, [activeRepo, isSandboxMode]);
 
   return (
     <div className="flex flex-1 items-center justify-center px-8">
@@ -57,11 +67,13 @@ function EmptyState({
           </svg>
         </div>
         <h2 className="text-lg font-semibold text-[#fafafa] mb-2">
-          {activeRepo ? activeRepo.name : 'Push'}
+          {activeRepo ? activeRepo.name : isSandboxMode ? 'Sandbox' : 'Push'}
         </h2>
         <p className="text-sm text-[#a1a1aa] leading-relaxed">
           {activeRepo
             ? `Focused on ${activeRepo.full_name}. Ask about PRs, recent changes, or the codebase.`
+            : isSandboxMode
+            ? 'Ephemeral workspace — write code, run commands, and prototype ideas from scratch.'
             : 'AI coding agent with direct repo access. Review PRs, explore codebases, and ship changes — all from here.'}
         </p>
         <div className="mt-6 flex flex-col gap-2">
@@ -80,7 +92,7 @@ function EmptyState({
   );
 }
 
-export function ChatContainer({ messages, agentStatus, activeRepo, onSuggestion, onCardAction, isConsoleOpen, onConsoleClose }: ChatContainerProps) {
+export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode, onSuggestion, onCardAction, isConsoleOpen, onConsoleClose }: ChatContainerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -139,7 +151,7 @@ export function ChatContainer({ messages, agentStatus, activeRepo, onSuggestion,
   if (messages.length === 0) {
     return (
       <div className="flex flex-1 flex-col overflow-hidden">
-        <EmptyState activeRepo={activeRepo} onSuggestion={onSuggestion} />
+        <EmptyState activeRepo={activeRepo} isSandboxMode={isSandboxMode} onSuggestion={onSuggestion} />
         <ActivityDrawer isOpen={isConsoleOpen ?? false} onClose={onConsoleClose ?? (() => {})} messages={messages} />
       </div>
     );

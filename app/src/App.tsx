@@ -374,10 +374,14 @@ function App() {
     [setTokenManually, syncRepos],
   );
 
-  // Sandbox mode — ephemeral workspace, no GitHub auth required
+  // Sandbox mode — ephemeral workspace, no GitHub auth required.
+  // Must create a fresh chat to break any provider lock from the previous conversation.
   const handleSandboxMode = useCallback(() => {
+    if (isStreaming) abortStream();
+    clearActiveRepo();
     setIsSandboxMode(true);
-  }, []);
+    createNewChat();
+  }, [isStreaming, abortStream, createNewChat, clearActiveRepo]);
 
   // Restart sandbox (for expiry recovery)
   const handleSandboxRestart = useCallback(async () => {
@@ -947,10 +951,19 @@ function App() {
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {isSandboxMode ? (
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
-                <div className={`h-2 w-2 rounded-full ${sandbox.status === 'ready' ? 'bg-emerald-500' : sandbox.status === 'creating' ? 'bg-[#f59e0b] animate-pulse' : 'bg-[#52525b]'}`} />
+              <button
+                onClick={() => {
+                  setIsSandboxMode(false);
+                  sandbox.stop();
+                  createNewChat();
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a] hover:border-[#3f3f46] transition-colors"
+                title="Exit sandbox mode"
+              >
+                <div className={`h-2 w-2 rounded-full ${sandbox.status === 'ready' ? 'bg-emerald-500' : sandbox.status === 'creating' ? 'bg-[#f59e0b] animate-pulse' : sandbox.status === 'error' ? 'bg-red-500' : 'bg-[#52525b]'}`} />
                 <span className="text-xs font-medium text-[#a1a1aa]">Sandbox</span>
-              </div>
+                <span className="text-[10px] text-[#52525b]">✕</span>
+              </button>
               <span className="text-[10px] text-[#52525b]">ephemeral</span>
               {latestSnapshot && (
                 <span
@@ -1084,6 +1097,30 @@ function App() {
         </div>
       </header>
 
+      {/* Sandbox error banner — shown when Modal call fails */}
+      {isSandboxMode && sandbox.status === 'error' && sandbox.error && (
+        <div className="mx-4 mt-2 rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2.5 flex items-center justify-between gap-2">
+          <p className="text-xs text-red-400 min-w-0 truncate">{sandbox.error}</p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => sandbox.start('', 'main')}
+              className="text-xs font-medium text-red-300 hover:text-red-200 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => {
+                setIsSandboxMode(false);
+                createNewChat();
+              }}
+              className="text-xs font-medium text-[#71717a] hover:text-[#a1a1aa] transition-colors"
+            >
+              Exit
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sandbox expiry warning */}
       {isSandboxMode && (
         <SandboxExpiryBanner
@@ -1126,6 +1163,7 @@ function App() {
         messages={messages}
         agentStatus={agentStatus}
         activeRepo={activeRepo}
+        isSandboxMode={isSandboxMode}
         onSuggestion={sendMessageWithSnapshotHeartbeat}
         onCardAction={handleCardActionWithSnapshotHeartbeat}
         isConsoleOpen={isConsoleOpen}
