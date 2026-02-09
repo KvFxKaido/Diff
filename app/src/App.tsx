@@ -683,8 +683,14 @@ function App() {
     return () => { cancelled = true; };
   }, [sandbox.status, sandbox.sandboxId, setAgentsMd]);
 
-  // Build workspace context when repos, active repo, or project instructions change
+  // Build workspace context when repos, active repo, or project instructions change.
+  // In sandbox mode, workspace context is null — the Orchestrator gets a sandbox-only
+  // preamble instead (see toLLMMessages in orchestrator.ts).
   useEffect(() => {
+    if (isSandboxMode) {
+      setWorkspaceContext(null);
+      return;
+    }
     if (repos.length > 0) {
       let ctx = buildWorkspaceContext(repos, activeRepo);
       if (agentsMdContent) {
@@ -694,7 +700,7 @@ function App() {
     } else {
       setWorkspaceContext(null);
     }
-  }, [repos, activeRepo, agentsMdContent, setWorkspaceContext]);
+  }, [repos, activeRepo, agentsMdContent, isSandboxMode, setWorkspaceContext]);
 
   // Sync sandbox ID to useChat
   useEffect(() => {
