@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Plus, Trash2, MessageSquare, Lock, GitPullRequest } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, MessageSquare, Lock, GitPullRequest, Box } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ interface RepoAndChatSelectorProps {
   onSwitchChat: (id: string) => void;
   onNewChat: () => void;
   onDeleteChat: (id: string) => void;
+  onSandboxMode?: () => void;
 }
 
 export function RepoAndChatSelector({
@@ -32,6 +33,7 @@ export function RepoAndChatSelector({
   onSwitchChat,
   onNewChat,
   onDeleteChat,
+  onSandboxMode,
 }: RepoAndChatSelectorProps) {
   const [open, setOpen] = useState(false);
 
@@ -103,6 +105,20 @@ export function RepoAndChatSelector({
                 </DropdownMenuItem>
               );
             })}
+
+            {/* --- New Sandbox --- */}
+            {onSandboxMode && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  onSandboxMode();
+                  setOpen(false);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 cursor-pointer text-emerald-400 hover:text-emerald-300 rounded-lg mx-1 mt-1"
+              >
+                <Box className="h-4 w-4" />
+                <span className="text-sm font-medium">New Sandbox</span>
+              </DropdownMenuItem>
+            )}
 
             <DropdownMenuSeparator className="bg-[#1a1a1a]" />
           </>

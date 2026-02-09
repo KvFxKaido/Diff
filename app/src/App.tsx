@@ -489,6 +489,7 @@ function App() {
               onSwitchChat={switchChat}
               onNewChat={handleCreateNewChat}
               onDeleteChat={deleteChat}
+              onSandboxMode={handleSandboxMode}
             />
           )}
         </div>
