@@ -16,7 +16,7 @@ import { fetchOllamaModels, fetchMistralModels } from '@/lib/model-catalog';
 import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { buildWorkspaceContext } from '@/lib/workspace-context';
+import { buildWorkspaceContext, sanitizeProjectInstructions } from '@/lib/workspace-context';
 import { readFromSandbox, execInSandbox, downloadFromSandbox, writeToSandbox } from '@/lib/sandbox-client';
 import { fetchProjectInstructions } from '@/lib/github-tools';
 import { getSandboxStartMode, setSandboxStartMode, type SandboxStartMode } from '@/lib/sandbox-start-mode';
@@ -694,7 +694,8 @@ function App() {
     if (repos.length > 0) {
       let ctx = buildWorkspaceContext(repos, activeRepo);
       if (agentsMdContent) {
-        ctx += '\n\nProject instructions from the repository:\n' + agentsMdContent;
+        const safe = sanitizeProjectInstructions(agentsMdContent);
+        ctx += '\n\n[PROJECT INSTRUCTIONS]\n' + safe + '\n[/PROJECT INSTRUCTIONS]';
       }
       setWorkspaceContext(ctx);
     } else {
