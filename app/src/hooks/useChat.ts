@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData, AIProviderType, SandboxStateCardData } from '@/types';
+import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData, AIProviderType, SandboxStateCardData, ActiveRepo } from '@/types';
 import { streamChat, getActiveProvider, estimateContextTokens } from '@/lib/orchestrator';
 import { detectAnyToolCall, executeAnyToolCall, detectMalformedToolAttempt } from '@/lib/tool-dispatch';
 import type { AnyToolCall } from '@/lib/tool-dispatch';
@@ -157,6 +157,7 @@ function getToolStatusLabel(toolCall: AnyToolCall): string {
         case 'sandbox_diff': return 'Getting diff...';
         case 'sandbox_prepare_commit': return 'Reviewing commit...';
         case 'sandbox_push': return 'Pushing to remote...';
+        case 'promote_to_github': return 'Promoting sandbox to GitHub...';
         default: return 'Sandbox operation...';
       }
     }
@@ -230,7 +231,17 @@ export interface UsageHandler {
   trackUsage: (model: string, inputTokens: number, outputTokens: number) => void;
 }
 
-export function useChat(activeRepoFullName: string | null, scratchpad?: ScratchpadHandlers, usageHandler?: UsageHandler) {
+export interface ChatRuntimeHandlers {
+  onSandboxPromoted?: (repo: ActiveRepo) => void;
+  bindSandboxSessionToRepo?: (repoFullName: string, branch?: string) => void;
+}
+
+export function useChat(
+  activeRepoFullName: string | null,
+  scratchpad?: ScratchpadHandlers,
+  usageHandler?: UsageHandler,
+  runtimeHandlers?: ChatRuntimeHandlers,
+) {
   const [conversations, setConversations] = useState<Record<string, Conversation>>(loadConversations);
   const [activeChatId, setActiveChatId] = useState<string>(() => loadActiveChatId(conversations));
   const [isStreaming, setIsStreaming] = useState(false);
@@ -254,6 +265,8 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
   // Keep usage handler in a ref so callbacks always see the latest
   const usageHandlerRef = useRef(usageHandler);
   usageHandlerRef.current = usageHandler;
+  const runtimeHandlersRef = useRef(runtimeHandlers);
+  runtimeHandlersRef.current = runtimeHandlers;
 
   // Derived state
   const messages = useMemo(
@@ -835,12 +848,40 @@ export function useChat(activeRepoFullName: string | null, scratchpad?: Scratchp
           } else {
             // GitHub or Sandbox tools
             const toolRepoFullName = repoRef.current;
-            toolExecResult = toolRepoFullName
-              ? await executeAnyToolCall(toolCall, toolRepoFullName, sandboxIdRef.current)
-              : { text: '[Tool Error] No active repo selected — please select a repo in the UI.' };
+            if (toolCall.source === 'github' && !toolRepoFullName) {
+              toolExecResult = { text: '[Tool Error] No active repo selected — please select a repo in the UI.' };
+            } else {
+              toolExecResult = await executeAnyToolCall(toolCall, toolRepoFullName || '', sandboxIdRef.current);
+            }
           }
 
           if (abortRef.current) break;
+
+          if (toolExecResult.promotion?.repo) {
+            const promotedRepo = toolExecResult.promotion.repo;
+            repoRef.current = promotedRepo.full_name;
+
+            setConversations((prev) => {
+              const conv = prev[chatId];
+              if (!conv) return prev;
+              const updated = {
+                ...prev,
+                [chatId]: {
+                  ...conv,
+                  repoFullName: promotedRepo.full_name,
+                  lastMessageAt: Date.now(),
+                },
+              };
+              saveConversations(updated);
+              return updated;
+            });
+
+            runtimeHandlersRef.current?.bindSandboxSessionToRepo?.(
+              promotedRepo.full_name,
+              promotedRepo.default_branch,
+            );
+            runtimeHandlersRef.current?.onSandboxPromoted?.(promotedRepo);
+          }
 
           // Attach card to the assistant message that triggered the tool call
           if (toolExecResult.card) {

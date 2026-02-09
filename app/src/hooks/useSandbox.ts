@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { createSandbox, cleanupSandbox, execInSandbox, setSandboxOwnerToken } from '@/lib/sandbox-client';
+import { createSandbox, cleanupSandbox, execInSandbox, setSandboxOwnerToken, getSandboxOwnerToken } from '@/lib/sandbox-client';
 
 export type SandboxStatus = 'idle' | 'creating' | 'ready' | 'error';
 
@@ -208,6 +208,23 @@ export function useSandbox(activeRepoFullName?: string | null) {
     setError(null);
   }, []);
 
+  const rebindSessionRepo = useCallback((repoFullName: string, branch: string = 'main') => {
+    const id = sandboxIdRef.current;
+    if (!id) return;
+    const ownerToken = getSandboxOwnerToken();
+    if (!ownerToken) return;
+
+    const existing = loadSession();
+    const createdAt = existing?.createdAt ?? Date.now();
+    saveSession({
+      sandboxId: id,
+      ownerToken,
+      repoFullName,
+      branch,
+      createdAt,
+    });
+  }, []);
+
   // Expose session createdAt for expiry warnings
   const createdAt = useMemo(() => {
     const saved = loadSession();
@@ -221,6 +238,7 @@ export function useSandbox(activeRepoFullName?: string | null) {
     error,
     start,
     stop,
+    rebindSessionRepo,
     createdAt,
   };
 }

@@ -154,6 +154,12 @@ export type ChatCard =
 export interface ToolExecutionResult {
   text: string;
   card?: ChatCard;
+  promotion?: {
+    repo: ActiveRepo;
+    pushed: boolean;
+    warning?: string;
+    htmlUrl?: string;
+  };
 }
 
 export interface PRCardData {

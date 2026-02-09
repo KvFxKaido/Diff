@@ -16,7 +16,7 @@ import { fetchOllamaModels, fetchMistralModels } from '@/lib/model-catalog';
 import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
-import { readFromSandbox, execInSandbox, downloadFromSandbox } from '@/lib/sandbox-client';
+import { readFromSandbox, execInSandbox, downloadFromSandbox, writeToSandbox } from '@/lib/sandbox-client';
 import { fetchProjectInstructions } from '@/lib/github-tools';
 import { getSandboxStartMode, setSandboxStartMode, type SandboxStartMode } from '@/lib/sandbox-start-mode';
 import {
@@ -87,11 +87,45 @@ function snapshotStagePercent(stage: HydrateProgress['stage']): number {
   }
 }
 
+const AGENTS_MD_TEMPLATE = `# AGENTS.md
+
+## Project Overview
+- What this project does:
+- Primary users:
+- Current priorities:
+
+## Tech Stack
+- Runtime/frameworks:
+- Build/test tools:
+- Deployment target:
+
+## Architecture Notes
+- Key directories:
+- Important services/modules:
+- Data flow summary:
+
+## Coding Conventions
+- Style/linting rules:
+- Type/validation expectations:
+- Error handling patterns:
+
+## Testing
+- Run unit tests:
+- Run integration/e2e tests:
+- Definition of done:
+
+## Agent Guidance
+- Preferred workflow for edits:
+- Files/components to read first:
+- Things to avoid:
+`;
+
 function App() {
   const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
   const scratchpad = useScratchpad(activeRepo?.full_name ?? null);
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [isSandboxMode, setIsSandboxMode] = useState(false);
+  const sandbox = useSandbox(isSandboxMode ? '' : (activeRepo?.full_name ?? null));
   const {
     messages,
     sendMessage,
@@ -113,12 +147,26 @@ function App() {
     handleCardAction,
     contextUsage,
     abortStream,
-  } = useChat(activeRepo?.full_name ?? null, {
-    content: scratchpad.content,
-    replace: scratchpad.replace,
-    append: scratchpad.append,
-  });
-  const sandbox = useSandbox(isSandboxMode ? '' : (activeRepo?.full_name ?? null));
+  } = useChat(
+    activeRepo?.full_name ?? null,
+    {
+      content: scratchpad.content,
+      replace: scratchpad.replace,
+      append: scratchpad.append,
+    },
+    undefined,
+    {
+      bindSandboxSessionToRepo: (repoFullName, branch) => {
+        sandbox.rebindSessionRepo(repoFullName, branch);
+      },
+      onSandboxPromoted: (repo) => {
+        sandbox.rebindSessionRepo(repo.full_name, repo.default_branch);
+        setActiveRepo(repo);
+        setIsSandboxMode(false);
+        toast.success(`Promoted to GitHub: ${repo.full_name}`);
+      },
+    },
+  );
   // PAT-based auth (fallback)
   const {
     token: patToken,
@@ -171,6 +219,8 @@ function App() {
   const availableProviders = ([['moonshot', 'Kimi', hasKimiKey], ['ollama', 'Ollama', hasOllamaKey], ['mistral', 'Mistral', hasMistralKey]] as const).filter(([, , has]) => has);
   
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [creatingAgentsMd, setCreatingAgentsMd] = useState(false);
+  const [creatingAgentsMdWithAI, setCreatingAgentsMdWithAI] = useState(false);
   const [installIdInput, setInstallIdInput] = useState('');
   const [showInstallIdInput, setShowInstallIdInput] = useState(false);
 
@@ -403,6 +453,117 @@ function App() {
     }
   }, [snapshotRestoring, sandbox, isSandboxMode, activeRepo, markSnapshotActivity]);
 
+  const refreshAgentsMdFromSandbox = useCallback(async (sandboxId: string): Promise<string | null> => {
+    try {
+      const result = await readFromSandbox(sandboxId, '/workspace/AGENTS.md');
+      const content = result.content || '';
+      if (!content.trim()) return null;
+      setAgentsMdContent(content);
+      setAgentsMd(content);
+      return content;
+    } catch {
+      return null;
+    }
+  }, [setAgentsMd]);
+
+  const autoCommitAgentsMdInSandbox = useCallback(async (sandboxId: string): Promise<{ ok: boolean; message: string }> => {
+    const commitResult = await execInSandbox(
+      sandboxId,
+      `cd /workspace && if [ ! -d .git ]; then git init >/dev/null 2>&1; fi && git add AGENTS.md && if git diff --cached --quiet; then echo "__PUSH_NO_CHANGES__"; else git commit -m "Add project instructions"; fi`,
+    );
+
+    if (commitResult.exitCode !== 0) {
+      const detail = commitResult.stderr || commitResult.stdout || 'unknown git error';
+      return { ok: false, message: `AGENTS.md created, but commit failed: ${detail}` };
+    }
+
+    if ((commitResult.stdout || '').includes('__PUSH_NO_CHANGES__')) {
+      return { ok: true, message: 'AGENTS.md already up to date in git.' };
+    }
+
+    return { ok: true, message: 'AGENTS.md created and committed.' };
+  }, []);
+
+  const handleCreateAgentsMd = useCallback(async () => {
+    if (!activeRepo || creatingAgentsMd) return;
+    setCreatingAgentsMd(true);
+    try {
+      let id = sandbox.sandboxId;
+      if (!id) {
+        id = await sandbox.start(activeRepo.full_name, activeRepo.default_branch);
+      }
+      if (!id) {
+        toast.error('Sandbox is not ready yet. Try again in a moment.');
+        return;
+      }
+
+      const writeResult = await writeToSandbox(id, '/workspace/AGENTS.md', AGENTS_MD_TEMPLATE);
+      if (!writeResult.ok) {
+        toast.error(writeResult.error || 'Failed to create AGENTS.md');
+        return;
+      }
+
+      const refreshed = await refreshAgentsMdFromSandbox(id);
+      if (!refreshed) {
+        toast.error('AGENTS.md was written but could not be re-read.');
+        return;
+      }
+
+      const commitStatus = await autoCommitAgentsMdInSandbox(id);
+      if (commitStatus.ok) {
+        toast.success(commitStatus.message);
+      } else {
+        toast.warning(commitStatus.message);
+      }
+      setShowFileBrowser(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create AGENTS.md';
+      toast.error(message);
+    } finally {
+      setCreatingAgentsMd(false);
+    }
+  }, [activeRepo, creatingAgentsMd, sandbox, refreshAgentsMdFromSandbox, autoCommitAgentsMdInSandbox]);
+
+  const handleCreateAgentsMdWithAI = useCallback(async () => {
+    if (!activeRepo || creatingAgentsMdWithAI || isStreaming) return;
+    setCreatingAgentsMdWithAI(true);
+    markSnapshotActivity();
+    try {
+      const prompt = [
+        `Create an AGENTS.md file for this repository (${activeRepo.full_name}).`,
+        'Use sandbox tools to inspect the repo quickly (README, package.json/pyproject, key folders), then write /workspace/AGENTS.md.',
+        'Keep it concise and practical, with sections for: Project Overview, Tech Stack, Architecture Notes, Coding Conventions, Testing, Agent Guidance.',
+        'If AGENTS.md already exists, overwrite it with an improved version.',
+        'After writing the file, commit it with message "Add project instructions".',
+        'If there are no staged changes, state that clearly.',
+        'After commit, summarize what you included in 5 bullets.',
+      ].join('\n');
+
+      await sendMessage(prompt);
+      const id = sandbox.sandboxId;
+      if (!id) {
+        toast.warning('AGENTS.md draft may be ready, but sandbox session is unavailable to refresh context.');
+        return;
+      }
+
+      const refreshed = await refreshAgentsMdFromSandbox(id);
+      if (!refreshed) {
+        toast.warning('AGENTS.md was not detected after AI run. You can retry or use Create Template.');
+        return;
+      }
+
+      const commitStatus = await autoCommitAgentsMdInSandbox(id);
+      if (commitStatus.ok) {
+        toast.success(commitStatus.message);
+      } else {
+        toast.warning(commitStatus.message);
+      }
+      setShowFileBrowser(true);
+    } finally {
+      setCreatingAgentsMdWithAI(false);
+    }
+  }, [activeRepo, creatingAgentsMdWithAI, isStreaming, markSnapshotActivity, sendMessage, sandbox.sandboxId, refreshAgentsMdFromSandbox, autoCommitAgentsMdInSandbox]);
+
   const handleSandboxDownload = useCallback(async () => {
     if (!sandbox.sandboxId || sandboxDownloading) return;
     setSandboxDownloading(true);
@@ -457,25 +618,30 @@ function App() {
   // Phase B: Upgrade from sandbox filesystem when sandbox becomes ready (may have local edits)
 
   const [agentsMdContent, setAgentsMdContent] = useState<string | null>(null);
+  const [projectInstructionsChecked, setProjectInstructionsChecked] = useState(false);
 
   // Phase A — GitHub API fetch (immediate)
   useEffect(() => {
     if (!activeRepo) {
       setAgentsMdContent(null);
       setAgentsMd(null);
+      setProjectInstructionsChecked(false);
       return;
     }
+    setProjectInstructionsChecked(false);
     let cancelled = false;
     fetchProjectInstructions(activeRepo.full_name)
       .then((result) => {
         if (cancelled) return;
         setAgentsMdContent(result?.content ?? null);
         setAgentsMd(result?.content ?? null);
+        setProjectInstructionsChecked(true);
       })
       .catch(() => {
         if (cancelled) return;
         setAgentsMdContent(null);
         setAgentsMd(null);
+        setProjectInstructionsChecked(true);
       });
     return () => { cancelled = true; };
   }, [activeRepo, setAgentsMd]);
@@ -883,6 +1049,33 @@ function App() {
           sandboxStatus={sandbox.status}
           onRestart={handleSandboxRestart}
         />
+      )}
+
+      {!isSandboxMode && activeRepo && projectInstructionsChecked && !agentsMdContent && (
+        <div className="mx-4 mt-3 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[#e4e4e7]">No AGENTS.md found</p>
+              <p className="text-[11px] text-[#71717a]">Add project instructions so the agent understands your repo conventions.</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={handleCreateAgentsMdWithAI}
+                disabled={creatingAgentsMdWithAI || isStreaming}
+                className="rounded-lg border border-emerald-700/50 bg-emerald-900/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-900/30 disabled:opacity-50"
+              >
+                {creatingAgentsMdWithAI ? 'Drafting...' : 'Create with AI'}
+              </button>
+              <button
+                onClick={handleCreateAgentsMd}
+                disabled={creatingAgentsMd || creatingAgentsMdWithAI}
+                className="rounded-lg border border-[#1f2937] bg-[#111827] px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-[#0f172a] disabled:opacity-50"
+              >
+                {creatingAgentsMd ? 'Creating...' : 'Create Template'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Chat */}

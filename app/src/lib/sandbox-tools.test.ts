@@ -37,6 +37,7 @@ vi.mock('./sandbox-client', () => ({
   writeToSandbox: vi.fn(),
   getSandboxDiff: vi.fn(),
   listDirectory: vi.fn(),
+  downloadFromSandbox: vi.fn(),
   browserScreenshotInSandbox: (...args: unknown[]) => mockBrowserScreenshotInSandbox(...args),
   browserExtractInSandbox: (...args: unknown[]) => mockBrowserExtractInSandbox(...args),
 }));
@@ -147,6 +148,29 @@ describe('validateSandboxToolCall -- sandbox_browser_screenshot', () => {
   it('rejects missing args entirely', () => {
     const result = validateSandboxToolCall({
       tool: 'sandbox_browser_screenshot',
+    });
+    expect(result).toBeNull();
+  });
+});
+
+describe('validateSandboxToolCall -- promote_to_github', () => {
+  it('accepts required repo_name and defaults optional fields', () => {
+    const result = validateSandboxToolCall({
+      tool: 'promote_to_github',
+      args: { repo_name: 'my-new-repo' },
+    });
+    expect(result).not.toBeNull();
+    expect(result?.tool).toBe('promote_to_github');
+    if (result?.tool === 'promote_to_github') {
+      expect(result.args.repo_name).toBe('my-new-repo');
+      expect(result.args.private).toBeUndefined();
+    }
+  });
+
+  it('rejects empty repo_name', () => {
+    const result = validateSandboxToolCall({
+      tool: 'promote_to_github',
+      args: { repo_name: '   ' },
     });
     expect(result).toBeNull();
   });

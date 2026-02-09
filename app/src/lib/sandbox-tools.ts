@@ -10,6 +10,7 @@
 
 import type {
   ToolExecutionResult,
+  ActiveRepo,
   SandboxCardData,
   DiffPreviewCardData,
   CommitReviewCardData,
@@ -35,6 +36,10 @@ import {
 import { runAuditor } from './auditor-agent';
 import { browserToolEnabled } from './feature-flags';
 import { recordBrowserMetric } from './browser-metrics';
+
+const OAUTH_STORAGE_KEY = 'github_access_token';
+const APP_TOKEN_STORAGE_KEY = 'github_app_token';
+const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
 
 // --- Browser tool error taxonomy ---
 
@@ -78,6 +83,79 @@ function formatSandboxError(error: string, context?: string): string {
   return `[Tool Error] ${error}`;
 }
 
+function getGitHubAuthToken(): string {
+  return localStorage.getItem(OAUTH_STORAGE_KEY) || localStorage.getItem(APP_TOKEN_STORAGE_KEY) || GITHUB_TOKEN;
+}
+
+function getGitHubHeaders(token: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/vnd.github+json',
+    Authorization: `token ${token}`,
+  };
+}
+
+function sanitizeGitOutput(value: string, token: string): string {
+  if (!value) return value;
+  return value
+    .replaceAll(token, '***')
+    .replace(/x-access-token:[^@]+@/gi, 'x-access-token:***@');
+}
+
+interface CreatedRepoResponse {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+  html_url?: string;
+  clone_url?: string;
+  owner?: {
+    login?: string;
+  };
+}
+
+async function createGitHubRepo(
+  repoName: string,
+  description: string | undefined,
+  isPrivate: boolean,
+): Promise<CreatedRepoResponse> {
+  const token = getGitHubAuthToken();
+  if (!token) {
+    throw new Error('GitHub auth required to promote. Connect a GitHub account in Settings.');
+  }
+
+  const response = await fetch('https://api.github.com/user/repos', {
+    method: 'POST',
+    headers: getGitHubHeaders(token),
+    body: JSON.stringify({
+      name: repoName,
+      description: description || '',
+      private: isPrivate,
+      auto_init: false,
+    }),
+  });
+
+  if (!response.ok) {
+    let details = '';
+    try {
+      const body = await response.json() as { message?: string; errors?: Array<{ message?: string }> };
+      details = body.message || body.errors?.[0]?.message || '';
+    } catch {
+      details = await response.text().catch(() => '');
+    }
+    if (response.status === 422) {
+      throw new Error(`Repository creation failed: name likely already exists (${details || 'validation error'}).`);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`Repository creation failed: GitHub auth error (${details || response.status}).`);
+    }
+    throw new Error(`Repository creation failed (${response.status}): ${details || 'unknown error'}`);
+  }
+
+  return response.json() as Promise<CreatedRepoResponse>;
+}
+
 
 
 // --- Tool types ---
@@ -95,7 +173,8 @@ export type SandboxToolCall =
   | { tool: 'sandbox_check_types'; args: Record<string, never> }
   | { tool: 'sandbox_browser_screenshot'; args: { url: string; fullPage?: boolean } }
   | { tool: 'sandbox_browser_extract'; args: { url: string; instruction?: string } }
-  | { tool: 'sandbox_download'; args: { path?: string } };
+  | { tool: 'sandbox_download'; args: { path?: string } }
+  | { tool: 'promote_to_github'; args: { repo_name: string; description?: string; private?: boolean } };
 
 // --- Validation ---
 
@@ -161,6 +240,18 @@ export function validateSandboxToolCall(parsed: unknown): SandboxToolCall | null
   if (tool === 'sandbox_download') {
     return { tool: 'sandbox_download', args: { path: typeof args.path === 'string' ? args.path : undefined } };
   }
+  if (tool === 'promote_to_github' && typeof args.repo_name === 'string') {
+    const repoName = args.repo_name.trim();
+    if (!repoName) return null;
+    return {
+      tool: 'promote_to_github',
+      args: {
+        repo_name: repoName,
+        description: typeof args.description === 'string' ? args.description : undefined,
+        private: typeof args.private === 'boolean' ? args.private : undefined,
+      },
+    };
+  }
   return null;
 }
 
@@ -175,7 +266,7 @@ export function detectSandboxToolCall(text: string): SandboxToolCall | null {
     try {
       const parsed = JSON.parse(match[1].trim());
       const toolName = getToolName(asRecord(parsed)?.tool);
-      if (toolName.startsWith('sandbox_') || ['read_sandbox_file', 'search_sandbox', 'list_sandbox_dir'].includes(toolName)) {
+      if (toolName.startsWith('sandbox_') || ['read_sandbox_file', 'search_sandbox', 'list_sandbox_dir', 'promote_to_github'].includes(toolName)) {
         const result = validateSandboxToolCall(parsed);
         if (result) return result;
       }
@@ -187,7 +278,7 @@ export function detectSandboxToolCall(text: string): SandboxToolCall | null {
   // Bare JSON fallback (brace-counting handles nested objects)
   for (const parsed of extractBareToolJsonObjects(text)) {
     const toolName = getToolName(asRecord(parsed)?.tool);
-    if (toolName.startsWith('sandbox_') || ['read_sandbox_file', 'search_sandbox', 'list_sandbox_dir'].includes(toolName)) {
+    if (toolName.startsWith('sandbox_') || ['read_sandbox_file', 'search_sandbox', 'list_sandbox_dir', 'promote_to_github'].includes(toolName)) {
       const result = validateSandboxToolCall(parsed);
       if (result) return result;
     }
@@ -990,6 +1081,91 @@ export async function executeSandboxToolCall(
         };
       }
 
+      case 'promote_to_github': {
+        const requestedName = call.args.repo_name.trim();
+        const repoName = requestedName.includes('/') ? requestedName.split('/').pop()!.trim() : requestedName;
+        if (!repoName) {
+          return { text: '[Tool Error] promote_to_github requires a valid repo_name.' };
+        }
+
+        const createdRepo = await createGitHubRepo(
+          repoName,
+          call.args.description,
+          call.args.private !== undefined ? call.args.private : true,
+        );
+
+        const authToken = getGitHubAuthToken();
+        if (!authToken) {
+          return { text: '[Tool Error] GitHub auth token missing after repo creation.' };
+        }
+        const remoteUrl = `https://x-access-token:${authToken}@github.com/${createdRepo.full_name}.git`;
+
+        const branchResult = await execInSandbox(
+          sandboxId,
+          'cd /workspace && git rev-parse --abbrev-ref HEAD',
+        );
+        const branchName = branchResult.exitCode === 0
+          ? (branchResult.stdout.trim() || createdRepo.default_branch || 'main')
+          : (createdRepo.default_branch || 'main');
+
+        const remoteResult = await execInSandbox(
+          sandboxId,
+          `cd /workspace && if git remote get-url origin >/dev/null 2>&1; then git remote set-url origin ${shellEscape(remoteUrl)}; else git remote add origin ${shellEscape(remoteUrl)}; fi`,
+        );
+        if (remoteResult.exitCode !== 0) {
+          const remoteError = sanitizeGitOutput(remoteResult.stderr || remoteResult.stdout || 'unknown error', authToken);
+          return { text: `[Tool Error] Created repo ${createdRepo.full_name}, but failed to configure git remote: ${remoteError}` };
+        }
+
+        const pushResult = await execInSandbox(
+          sandboxId,
+          `cd /workspace && git push -u origin ${shellEscape(branchName)}`,
+        );
+
+        const rawPushError = `${pushResult.stderr}\n${pushResult.stdout}`.toLowerCase();
+        const noCommitsYet = rawPushError.includes('src refspec')
+          || rawPushError.includes('does not match any')
+          || rawPushError.includes('no commits yet');
+
+        const repoObject: ActiveRepo = {
+          id: createdRepo.id,
+          name: createdRepo.name,
+          full_name: createdRepo.full_name,
+          owner: createdRepo.owner?.login || createdRepo.full_name.split('/')[0],
+          default_branch: createdRepo.default_branch || branchName || 'main',
+          private: createdRepo.private,
+        };
+
+        if (pushResult.exitCode !== 0 && !noCommitsYet) {
+          const pushError = sanitizeGitOutput(pushResult.stderr || pushResult.stdout || 'unknown error', authToken);
+          return {
+            text: `[Tool Error] Repo ${createdRepo.full_name} was created, but push failed: ${pushError}. You can retry after fixing git/auth state.`,
+          };
+        }
+
+        const warning = pushResult.exitCode !== 0 && noCommitsYet
+          ? 'Repo created and remote configured, but there were no local commits to push yet.'
+          : undefined;
+
+        const lines = [
+          '[Tool Result — promote_to_github]',
+          `Repository created: ${createdRepo.full_name}`,
+          `Visibility: ${createdRepo.private ? 'private' : 'public'}`,
+          `Default branch: ${createdRepo.default_branch || branchName || 'main'}`,
+          warning ? `Warning: ${warning}` : `Push: successful on branch ${branchName}`,
+        ];
+
+        return {
+          text: lines.join('\n'),
+          promotion: {
+            repo: repoObject,
+            pushed: !warning,
+            warning,
+            htmlUrl: createdRepo.html_url,
+          },
+        };
+      }
+
       default:
         return { text: `[Tool Error] Unknown sandbox tool: ${String((call as { tool?: unknown }).tool ?? 'unknown')}` };
     }
@@ -1029,6 +1205,7 @@ Additional tools available when sandbox is active:
 - sandbox_run_tests(framework?) — Run the test suite. Auto-detects npm/pytest/cargo/go if framework not specified. Returns pass/fail counts and output.
 - sandbox_check_types() — Run type checker (tsc for TypeScript, pyright/mypy for Python). Auto-detects from config files. Returns errors with file:line locations.
 - sandbox_download(path?) — Download workspace files as a compressed archive (tar.gz). Path defaults to /workspace. Returns a download card the user can save.${BROWSER_TOOL_PROTOCOL_LINE}
+- promote_to_github(repo_name, description?, private?) — Create a new GitHub repo under the authenticated user, set the sandbox git remote, and push current branch. Defaults to private=true.
 
 Compatibility aliases also work:
 - read_sandbox_file(path) → sandbox_read_file
