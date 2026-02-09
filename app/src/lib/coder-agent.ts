@@ -7,7 +7,8 @@
  */
 
 import type { ChatMessage, ChatCard } from '@/types';
-import { getActiveProvider, getProviderStreamFn } from './orchestrator';
+import { getActiveProvider, getProviderStreamFn, buildUserIdentityBlock } from './orchestrator';
+import { getUserProfile } from '@/hooks/useUserProfile';
 import { getModelForRole } from './providers';
 import { detectSandboxToolCall, executeSandboxToolCall, SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
 
@@ -63,8 +64,12 @@ export async function runCoderAgent(
   const roleModel = getModelForRole(activeProvider, 'coder');
   const coderModelId = roleModel?.id; // undefined falls back to provider default
 
-  // Build system prompt, optionally including AGENTS.md (truncated if too large)
+  // Build system prompt, optionally including user identity and AGENTS.md
   let systemPrompt = CODER_SYSTEM_PROMPT;
+  const identityBlock = buildUserIdentityBlock(getUserProfile());
+  if (identityBlock) {
+    systemPrompt += '\n\n' + identityBlock;
+  }
   if (agentsMd) {
     const truncatedAgentsMd = truncateContent(agentsMd, MAX_AGENTS_MD_SIZE, 'AGENTS.md');
     systemPrompt += `\n\nAGENTS.MD — Project instructions from the repository:\n${truncatedAgentsMd}`;

@@ -1,5 +1,18 @@
 export type AppState = 'home' | 'running' | 'results' | 'repos';
 
+// User profile — persisted in localStorage, injected into system prompt
+export interface UserProfile {
+  displayName: string;
+  githubLogin?: string;
+  bio: string;
+}
+
+export const USER_PROFILE_DEFAULTS: UserProfile = {
+  displayName: '',
+  githubLogin: undefined,
+  bio: '',
+};
+
 export type AgentRole = 'orchestrator' | 'coder' | 'auditor';
 
 export type AIProviderType = 'moonshot' | 'ollama' | 'mistral' | 'demo';

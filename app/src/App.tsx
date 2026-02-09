@@ -15,6 +15,7 @@ import { getActiveProvider, getContextMode, setContextMode, type ContextMode } f
 import { fetchOllamaModels, fetchMistralModels } from '@/lib/model-catalog';
 import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { buildWorkspaceContext } from '@/lib/workspace-context';
 import { readFromSandbox, execInSandbox, downloadFromSandbox, writeToSandbox } from '@/lib/sandbox-client';
 import { fetchProjectInstructions } from '@/lib/github-tools';
@@ -203,6 +204,9 @@ function App() {
   const { setKey: setMistralKey, clearKey: clearMistralKey, hasKey: hasMistralKey, model: mistralModel, setModel: setMistralModel } = useMistralConfig();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
+  const { profile, updateProfile, clearProfile } = useUserProfile();
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [bioDraft, setBioDraft] = useState('');
   const [kimiKeyInput, setKimiKeyInput] = useState('');
   const [ollamaKeyInput, setOllamaKeyInput] = useState('');
   const [mistralKeyInput, setMistralKeyInput] = useState('');
@@ -303,6 +307,14 @@ function App() {
       setMistralModelsUpdatedAt(null);
     }
   }, [hasMistralKey]);
+
+  useEffect(() => {
+    setDisplayNameDraft(profile.displayName);
+  }, [profile.displayName]);
+
+  useEffect(() => {
+    setBioDraft(profile.bio);
+  }, [profile.bio]);
 
   const ollamaModelOptions = useMemo(() => {
     const set = new Set(ollamaModels);
@@ -819,6 +831,12 @@ function App() {
     if (token) syncRepos();
   }, [token, syncRepos]);
 
+  useEffect(() => {
+    if (validatedUser?.login && validatedUser.login !== profile.githubLogin) {
+      updateProfile({ githubLogin: validatedUser.login });
+    }
+  }, [validatedUser?.login]);
+
   // Wrap createNewChat to also re-sync repos
   const handleCreateNewChat = useCallback(() => {
     createNewChat();
@@ -834,6 +852,26 @@ function App() {
     markSnapshotActivity();
     return handleCardAction(action);
   }, [markSnapshotActivity, handleCardAction]);
+
+  const handleDisplayNameBlur = useCallback(() => {
+    const nextDisplayName = displayNameDraft.trim();
+    if (nextDisplayName !== profile.displayName) {
+      updateProfile({ displayName: nextDisplayName });
+    }
+    if (nextDisplayName !== displayNameDraft) {
+      setDisplayNameDraft(nextDisplayName);
+    }
+  }, [displayNameDraft, profile.displayName, updateProfile]);
+
+  const handleBioBlur = useCallback(() => {
+    const nextBio = bioDraft.slice(0, 300);
+    if (nextBio !== profile.bio) {
+      updateProfile({ bio: nextBio });
+    }
+    if (nextBio !== bioDraft) {
+      setBioDraft(nextBio);
+    }
+  }, [bioDraft, profile.bio, updateProfile]);
 
   // Unregister service workers on tunnel domains to prevent stale caching
   useEffect(() => {
@@ -1473,6 +1511,70 @@ function App() {
                 )}
               </div>
             )}
+
+            {/* About You */}
+            <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+              <label className="text-sm font-medium text-[#fafafa]">
+                About You
+              </label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#a1a1aa]">
+                  Your Name
+                </label>
+                <input
+                  type="text"
+                  value={displayNameDraft}
+                  onChange={(e) => setDisplayNameDraft(e.target.value)}
+                  onBlur={handleDisplayNameBlur}
+                  placeholder="Your name"
+                  className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+                />
+              </div>
+
+              {validatedUser && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[#a1a1aa]">
+                    GitHub
+                  </label>
+                  <div className="text-xs text-[#a1a1aa] font-mono">
+                    @{profile.githubLogin || validatedUser.login}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#a1a1aa]">
+                  About You
+                </label>
+                <textarea
+                  value={bioDraft}
+                  onChange={(e) => setBioDraft(e.target.value.slice(0, 300))}
+                  onBlur={handleBioBlur}
+                  rows={3}
+                  maxLength={300}
+                  placeholder="Anything you want the assistant to know about you"
+                  className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46] resize-none"
+                />
+                <p className="text-[10px] text-[#52525b]">
+                  {bioDraft.length}/300
+                </p>
+              </div>
+
+              {profile.displayName.trim().length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    clearProfile();
+                    setDisplayNameDraft('');
+                    setBioDraft('');
+                  }}
+                  className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                >
+                  Clear Profile
+                </Button>
+              )}
+            </div>
 
             {/* AI Provider */}
             <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">

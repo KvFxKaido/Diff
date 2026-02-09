@@ -5,6 +5,8 @@ import { SCRATCHPAD_TOOL_PROTOCOL, buildScratchpadContext } from './scratchpad-t
 import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 import { getOllamaKey } from '@/hooks/useOllamaConfig';
 import { getMistralKey } from '@/hooks/useMistralConfig';
+import { getUserProfile } from '@/hooks/useUserProfile';
+import type { UserProfile } from '@/types';
 import { getOllamaModelName, getMistralModelName, getPreferredProvider } from './providers';
 // ---------------------------------------------------------------------------
 // Types
@@ -381,6 +383,26 @@ function isNonEmptyContent(content: string | LLMMessageContent[]): boolean {
   return content.trim().length > 0;
 }
 
+/**
+ * Build a compact identity block for the system prompt.
+ * Returns empty string when the user hasn't set their name.
+ */
+export function buildUserIdentityBlock(profile?: UserProfile): string {
+  if (!profile || !profile.displayName.trim()) return '';
+  const lines = ['## User Identity', `Name: ${profile.displayName.trim()}`];
+  if (profile.githubLogin) {
+    lines.push(`GitHub: @${profile.githubLogin}`);
+  }
+  if (profile.bio.trim()) {
+    // Escape delimiter-breaking attempts (same pattern as scratchpad)
+    const escaped = profile.bio.trim()
+      .replace(/\[USER IDENTITY\]/gi, '[USER IDENTITY\u200B]')
+      .replace(/\[\/USER IDENTITY\]/gi, '[/USER IDENTITY\u200B]');
+    lines.push(`Context: ${escaped}`);
+  }
+  return lines.join('\n');
+}
+
 function toLLMMessages(
   messages: ChatMessage[],
   workspaceContext?: string,
@@ -388,8 +410,15 @@ function toLLMMessages(
   systemPromptOverride?: string,
   scratchpadContent?: string,
 ): LLMMessage[] {
-  // Build system prompt: base + workspace context + tool protocol + optional sandbox tools + scratchpad
+  // Build system prompt: base + user identity + workspace context + tool protocol + optional sandbox tools + scratchpad
   let systemContent = systemPromptOverride || ORCHESTRATOR_SYSTEM_PROMPT;
+
+  // Inject user identity (name, bio) when configured
+  const identityBlock = buildUserIdentityBlock(getUserProfile());
+  if (identityBlock) {
+    systemContent += '\n\n' + identityBlock;
+  }
+
   if (workspaceContext) {
     systemContent += '\n\n' + workspaceContext + '\n' + TOOL_PROTOCOL;
     if (hasSandbox) {
