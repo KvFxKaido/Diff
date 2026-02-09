@@ -47,6 +47,7 @@ Add to the existing content (good for incremental updates):
 - Consolidating decisions from the conversation
 - Building up requirements or specs iteratively
 - Keeping track of open questions or TODOs
+- Never treat scratchpad as the user's profile/About You settings. You cannot edit profile fields; ask the user to update Settings > About You for permanent personal info.
 
 **Format tips:**
 - Use markdown headers (##) to organize sections

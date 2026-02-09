@@ -184,6 +184,7 @@ function App() {
   // GitHub App auth (primary)
   const {
     token: appToken,
+    installationId,
     connect: connectApp,
     install: installApp,
     disconnect: appDisconnect,
@@ -1279,6 +1280,11 @@ function App() {
                       {isAppAuth && (
                         <p className="text-xs text-[#52525b] mt-1">
                           Auto-refreshing token
+                        </p>
+                      )}
+                      {isAppAuth && installationId && (
+                        <p className="text-xs text-[#71717a] mt-1 font-mono">
+                          Installation ID: {installationId}
                         </p>
                       )}
                     </div>

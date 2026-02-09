@@ -442,15 +442,22 @@ function isNonEmptyContent(content: string | LLMMessageContent[]): boolean {
 
 /**
  * Build a compact identity block for the system prompt.
- * Returns empty string when the user hasn't set their name.
+ * Returns empty string when no identity fields are set.
  */
 export function buildUserIdentityBlock(profile?: UserProfile): string {
-  if (!profile || !profile.displayName.trim()) return '';
-  const lines = ['## User Identity', `Name: ${profile.displayName.trim()}`];
-  if (profile.githubLogin) {
+  const hasName = Boolean(profile?.displayName?.trim());
+  const hasGitHub = Boolean(profile?.githubLogin?.trim());
+  const hasBio = Boolean(profile?.bio?.trim());
+  if (!profile || (!hasName && !hasGitHub && !hasBio)) return '';
+
+  const lines = ['## User Identity'];
+  if (hasName) {
+    lines.push(`Name: ${profile.displayName.trim()}`);
+  }
+  if (hasGitHub) {
     lines.push(`GitHub: @${profile.githubLogin}`);
   }
-  if (profile.bio.trim()) {
+  if (hasBio) {
     // Escape delimiter-breaking attempts (same pattern as scratchpad)
     const escaped = profile.bio.trim()
       .replace(/\[USER IDENTITY\]/gi, '[USER IDENTITY\u200B]')

@@ -177,15 +177,21 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
   const fetchAndSetToken = useCallback(async (instId: string): Promise<boolean> => {
     setLoading(true);
     setError(null);
+    const normalizedInstId = instId.trim();
+
+    // Persist installation ID independently from token state so users don't lose it
+    // when token exchange fails temporarily (network/proxy/allowlist issues).
+    if (normalizedInstId) {
+      localStorage.setItem(INSTALLATION_ID_KEY, normalizedInstId);
+      setInstallationId(normalizedInstId);
+    }
 
     try {
-      const data = await fetchAppToken(instId);
+      const data = await fetchAppToken(normalizedInstId);
 
-      localStorage.setItem(INSTALLATION_ID_KEY, instId);
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(TOKEN_EXPIRY_KEY, data.expires_at);
 
-      setInstallationId(instId);
       setToken(data.token);
       setTokenExpiry(data.expires_at);
 
@@ -196,14 +202,11 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
       }
 
       // Schedule refresh
-      scheduleRefresh(data.expires_at, instId);
+      scheduleRefresh(data.expires_at, normalizedInstId);
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to authenticate';
       setError(message);
-      // Clear invalid installation
-      localStorage.removeItem(INSTALLATION_ID_KEY);
-      setInstallationId('');
       return false;
     } finally {
       setLoading(false);
