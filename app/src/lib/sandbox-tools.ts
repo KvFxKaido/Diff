@@ -107,6 +107,12 @@ function getToolName(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function getNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function validateSandboxToolCall(parsed: unknown): SandboxToolCall | null {
   const parsedObj = asRecord(parsed);
   if (!parsedObj) return null;
@@ -143,11 +149,12 @@ export function validateSandboxToolCall(parsed: unknown): SandboxToolCall | null
   if (tool === 'sandbox_check_types') {
     return { tool: 'sandbox_check_types', args: {} };
   }
-  if (tool === 'sandbox_browser_screenshot' && typeof args.url === 'string' && browserToolEnabled) {
-    return { tool: 'sandbox_browser_screenshot', args: { url: args.url, fullPage: Boolean(args.fullPage) } };
+  const browserUrl = getNonEmptyString(args.url);
+  if (tool === 'sandbox_browser_screenshot' && browserUrl && browserToolEnabled) {
+    return { tool: 'sandbox_browser_screenshot', args: { url: browserUrl, fullPage: Boolean(args.fullPage) } };
   }
-  if (tool === 'sandbox_browser_extract' && typeof args.url === 'string' && browserToolEnabled) {
-    return { tool: 'sandbox_browser_extract', args: { url: args.url, instruction: typeof args.instruction === 'string' ? args.instruction : undefined } };
+  if (tool === 'sandbox_browser_extract' && browserUrl && browserToolEnabled) {
+    return { tool: 'sandbox_browser_extract', args: { url: browserUrl, instruction: typeof args.instruction === 'string' ? args.instruction : undefined } };
   }
   return null;
 }
