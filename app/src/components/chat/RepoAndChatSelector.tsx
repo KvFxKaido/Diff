@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Plus, Trash2, MessageSquare, Lock, GitPullRequest, Box } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, MessageSquare, Lock, GitPullRequest, Box, FolderOpen } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ interface RepoAndChatSelectorProps {
   onSwitchChat: (id: string) => void;
   onNewChat: () => void;
   onDeleteChat: (id: string) => void;
+  onBrowseRepos?: () => void;
   onSandboxMode?: () => void;
 }
 
@@ -33,6 +34,7 @@ export function RepoAndChatSelector({
   onSwitchChat,
   onNewChat,
   onDeleteChat,
+  onBrowseRepos,
   onSandboxMode,
 }: RepoAndChatSelectorProps) {
   const [open, setOpen] = useState(false);
@@ -106,6 +108,20 @@ export function RepoAndChatSelector({
               );
             })}
 
+            {/* --- Browse repos --- */}
+            {onBrowseRepos && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  onBrowseRepos();
+                  setOpen(false);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 cursor-pointer text-[#0070f3] hover:text-[#0060d3] rounded-lg mx-1 mt-1"
+              >
+                <FolderOpen className="h-4 w-4" />
+                <span className="text-sm font-medium">Browse repos</span>
+              </DropdownMenuItem>
+            )}
+
             {/* --- New Sandbox --- */}
             {onSandboxMode && (
               <DropdownMenuItem
@@ -113,7 +129,7 @@ export function RepoAndChatSelector({
                   onSandboxMode();
                   setOpen(false);
                 }}
-                className="flex items-center gap-2.5 px-3 py-2 cursor-pointer text-emerald-400 hover:text-emerald-300 rounded-lg mx-1 mt-1"
+                className="flex items-center gap-2.5 px-3 py-2 cursor-pointer text-emerald-400 hover:text-emerald-300 rounded-lg mx-1"
               >
                 <Box className="h-4 w-4" />
                 <span className="text-sm font-medium">New Sandbox</span>

@@ -489,6 +489,7 @@ function App() {
               onSwitchChat={switchChat}
               onNewChat={handleCreateNewChat}
               onDeleteChat={deleteChat}
+              onBrowseRepos={clearActiveRepo}
               onSandboxMode={handleSandboxMode}
             />
           )}
