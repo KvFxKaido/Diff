@@ -49,6 +49,8 @@ Role-based agent system. Models are replaceable. Roles are locked. The user neve
 
 **Repo hard lock:** The Orchestrator only sees the active repo in its context. Other repos are stripped entirely. Repo switching is UI-only via the header dropdown.
 
+**User identity:** Users can set a display name, bio, and GitHub login in Settings (About You tab). Stored in localStorage via `useUserProfile` hook (standalone getter + React hook pattern). Injected into both Orchestrator and Coder system prompts via `buildUserIdentityBlock()` in orchestrator.ts. Bio content is escaped to prevent prompt injection via identity block boundaries.
+
 **Scratchpad:** A shared notepad that both the user and the LLM can read/write. User opens via button in ChatInput, the LLM updates via `set_scratchpad` / `append_scratchpad` tools. Content persists in localStorage and is always injected into the system prompt. Content is escaped to prevent prompt injection.
 
 **Rolling window:** Context is managed by token budget, not fixed message count. The app summarizes older tool-heavy messages first, then trims oldest message pairs if still over budget, while keeping tool call/result pairs together.
@@ -75,7 +77,7 @@ wrangler.jsonc       # Cloudflare Workers config (repo root)
 
 ## Key Files
 
-- `lib/orchestrator.ts` — System prompt, multi-backend streaming (Kimi + Ollama + Mistral SSE), think-token parsing, provider routing, token-budget context management
+- `lib/orchestrator.ts` — System prompt, multi-backend streaming (Kimi + Ollama + Mistral SSE), think-token parsing, provider routing, token-budget context management, `buildUserIdentityBlock()` (user identity injection)
 - `lib/github-tools.ts` — GitHub tool protocol (prompt-engineered function calling via JSON blocks), `delegate_coder`, `fetchProjectInstructions` (reads AGENTS.md/CLAUDE.md from repos via API)
 - `lib/sandbox-tools.ts` — Sandbox tool definitions, detection, execution, `SANDBOX_TOOL_PROTOCOL` prompt
 - `lib/sandbox-client.ts` — HTTP client for `/api/sandbox/*` endpoints (thin fetch wrappers)
@@ -86,6 +88,7 @@ wrangler.jsonc       # Cloudflare Workers config (repo root)
 - `lib/workspace-context.ts` — Builds active repo context for system prompt injection
 - `lib/providers.ts` — AI provider configs (Kimi + Ollama + Mistral), role-to-model mapping, backend preference
 - `hooks/useChat.ts` — Chat state, message history, unified tool execution loop, Coder delegation, scratchpad integration
+- `hooks/useUserProfile.ts` — User identity (name, bio, GitHub login), standalone getter + React hook, localStorage persistence
 - `hooks/useSandbox.ts` — Sandbox session lifecycle (idle → creating → ready → error), supports ephemeral mode
 - `hooks/useScratchpad.ts` — Shared notepad state, localStorage persistence, content size limits
 - `hooks/useGitHubAuth.ts` — PAT validation, OAuth flow, mount re-validation

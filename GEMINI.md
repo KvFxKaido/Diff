@@ -34,6 +34,7 @@ Push is a personal chat interface backed by role-based AI agents (Orchestrator, 
 *   **Sandbox:** Persistent Linux environment (via Modal) for cloning repos, running tests, and editing files.
 *   **Sandbox Mode:** Ephemeral workspace (no GitHub repo). Entry via onboarding or repo picker. GitHub tools blocked; 30-min lifetime with expiry warning. Download as tar.gz.
 *   **Browser Tools (Optional):** Sandbox-backed webpage screenshot + text extraction via Browserbase.
+*   **User Identity:** Display name, bio, and GitHub login set in Settings. Stored in localStorage via `useUserProfile` hook. Injected into Orchestrator and Coder system prompts via `buildUserIdentityBlock()`.
 *   **Scratchpad:** Shared persistent notepad for user/AI collaboration.
 *   **Context Management:** Token-budget rolling window with summarization.
 
@@ -47,7 +48,7 @@ Push/
 │   │   │   ├── chat/      # Chat UI (Container, Input, Bubbles, SandboxExpiryBanner)
 │   │   │   ├── cards/     # Inline UI Cards (PR, Diff, Sandbox Output, SandboxDownloadCard)
 │   │   │   └── ui/        # shadcn/ui library
-│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth)
+│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useUserProfile)
 │   │   ├── lib/           # Core Logic
 │   │   │   ├── orchestrator.ts    # Agent coordination & streaming
 │   │   │   ├── coder-agent.ts     # Coder sub-agent loop

@@ -58,6 +58,10 @@ The Orchestrator can delegate complex coding tasks to the Coder sub-agent via `d
 
 Prompt-gated by `VITE_BROWSER_TOOL_ENABLED=true`. Routed through Worker endpoints.
 
+### User Identity
+
+Users set a display name, bio, and GitHub login in Settings. Stored in localStorage via `useUserProfile` hook. Injected into both Orchestrator and Coder system prompts via `buildUserIdentityBlock()`. Bio is escaped to prevent prompt injection.
+
 ### Scratchpad
 
 A shared notepad that both the user and AI can read/write. Content persists in localStorage and is always injected into the system prompt. Tools: `set_scratchpad` (replace) and `append_scratchpad` (add).
@@ -141,6 +145,7 @@ Push/
 | `hooks/useGitHubAuth.ts` | PAT validation, OAuth flow |
 | `hooks/useRepos.ts` | Repo list fetching, activity detection |
 | `hooks/useActiveRepo.ts` | Active repo selection + persistence |
+| `hooks/useUserProfile.ts` | User identity (name, bio, GitHub login) + standalone getter |
 | `hooks/useFileBrowser.ts` | File browser state and navigation |
 
 ## Coding Conventions

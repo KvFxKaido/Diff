@@ -16,6 +16,7 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 - **Tool protocol** — the agent calls GitHub and sandbox tools mid-conversation (PRs, commits, diffs, tests, type checks, workflows)
 - **Browser tools (optional)** — capture screenshots and extract page text via Browserbase in the sandbox
 - **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
+- **User identity** — tell the agent your name, bio, and GitHub login so it knows who it's working with
 - **Streaming** — responses arrive token-by-token with visible thinking
 - **Sandbox Mode** — Start coding immediately without GitHub auth. Ephemeral workspace that auto-expires after 30 minutes. Download your work before it disappears.
 
@@ -138,7 +139,7 @@ Push/
 │   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, RepoSelector
 │   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, etc.
 │   │   │   └── ui/        # shadcn/ui component library
-│   │   └── hooks/         # useChat, useSandbox, useScratchpad, useGitHubAuth, useGitHubAppAuth, useRepos
+│   │   └── hooks/         # useChat, useSandbox, useScratchpad, useUserProfile, useGitHubAuth, useGitHubAppAuth, useRepos
 │   │   ├── lib/           # Agent logic, tool protocols, git operations
 │   │   ├── sections/      # OnboardingScreen, RepoPicker, FileBrowser
 │   │   └── types/         # TypeScript definitions
