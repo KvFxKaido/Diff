@@ -6,6 +6,7 @@ const STATE_KEY = 'github_oauth_state';
 
 const CLIENT_ID = import.meta.env.VITE_GITHUB_CLIENT_ID || '';
 const OAUTH_PROXY = import.meta.env.VITE_GITHUB_OAUTH_PROXY || '';
+const OAUTH_REDIRECT_URI = import.meta.env.VITE_GITHUB_REDIRECT_URI || '';
 const ENV_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
 
 type UseGitHubAuth = {
@@ -34,6 +35,12 @@ async function validateToken(pat: string): Promise<GitHubUser | null> {
   } catch {
     return null;
   }
+}
+
+function getOAuthRedirectUri(): string {
+  const configured = OAUTH_REDIRECT_URI.trim();
+  if (configured) return configured;
+  return new URL('/', window.location.origin).toString();
 }
 
 export function useGitHubAuth(): UseGitHubAuth {
@@ -93,7 +100,7 @@ export function useGitHubAuth(): UseGitHubAuth {
     const state = crypto.randomUUID();
     sessionStorage.setItem(STATE_KEY, state);
 
-    const redirectUri = window.location.origin;
+    const redirectUri = getOAuthRedirectUri();
     const params = new URLSearchParams({
       client_id: CLIENT_ID,
       redirect_uri: redirectUri,
@@ -143,7 +150,7 @@ export function useGitHubAuth(): UseGitHubAuth {
       },
       body: JSON.stringify({
         code,
-        redirect_uri: window.location.origin,
+        redirect_uri: getOAuthRedirectUri(),
       }),
     })
       .then(async (response) => {

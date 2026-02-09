@@ -13,6 +13,7 @@ const GITHUB_APP_NAME = 'push-auth';
 
 // GitHub App OAuth Client ID (public value — safe to hardcode, like GITHUB_APP_NAME)
 const GITHUB_APP_CLIENT_ID = 'Iv23liJZx2boQUWBDb3T';
+const GITHUB_APP_REDIRECT_URI = import.meta.env.VITE_GITHUB_APP_REDIRECT_URI || '';
 
 type TokenResponse = {
   token: string;
@@ -42,6 +43,13 @@ function formatAppTokenError(status: number, errorMessage: string): string {
     return 'Access denied while fetching GitHub App token. Verify the app installation and Worker configuration.';
   }
   return errorMessage || `Failed to fetch token: ${status}`;
+}
+
+function getGitHubAppRedirectUri(): string {
+  const configured = GITHUB_APP_REDIRECT_URI.trim();
+  if (configured) return configured;
+  // Canonical root URL avoids origin/slash mismatches in GitHub callback checks.
+  return new URL('/', window.location.origin).toString();
 }
 
 async function fetchAppToken(installationId: string): Promise<TokenResponse> {
@@ -295,17 +303,22 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
 
   const connect = useCallback(() => {
     // Redirect to GitHub OAuth for auto-connect (finds existing installation automatically)
-    const redirectUri = encodeURIComponent(window.location.origin);
+    const params = new URLSearchParams({
+      client_id: GITHUB_APP_CLIENT_ID,
+      redirect_uri: getGitHubAppRedirectUri(),
+    });
     window.location.assign(
-      `https://github.com/login/oauth/authorize?client_id=${GITHUB_APP_CLIENT_ID}&redirect_uri=${redirectUri}`
+      `https://github.com/login/oauth/authorize?${params.toString()}`
     );
   }, []);
 
   const install = useCallback(() => {
     // Redirect to GitHub App installation page
-    const redirectUri = encodeURIComponent(window.location.origin);
+    const params = new URLSearchParams({
+      redirect_uri: getGitHubAppRedirectUri(),
+    });
     window.location.assign(
-      `https://github.com/apps/${GITHUB_APP_NAME}/installations/new?redirect_uri=${redirectUri}`
+      `https://github.com/apps/${GITHUB_APP_NAME}/installations/new?${params.toString()}`
     );
   }, []);
 

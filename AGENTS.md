@@ -225,6 +225,8 @@ VITE_MISTRAL_API_KEY=...          # Mistral API key
 VITE_GITHUB_TOKEN=...             # Optional, higher GitHub rate limits
 VITE_GITHUB_CLIENT_ID=...         # Optional, enables OAuth login
 VITE_GITHUB_OAUTH_PROXY=...       # Optional, required for OAuth
+VITE_GITHUB_REDIRECT_URI=...      # Optional, exact OAuth callback URL (OAuth App/PAT flow)
+VITE_GITHUB_APP_REDIRECT_URI=...  # Optional, exact OAuth callback URL (GitHub App flow)
 
 # Browser tools (optional)
 VITE_BROWSER_TOOL_ENABLED=true    # Expose browser tools in agent prompts

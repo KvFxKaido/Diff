@@ -113,6 +113,8 @@ VITE_MISTRAL_API_KEY=...          # Optional — Mistral key, can also be set vi
 VITE_GITHUB_TOKEN=...             # Optional, higher GitHub rate limits
 VITE_GITHUB_CLIENT_ID=...         # Optional, enables OAuth login
 VITE_GITHUB_OAUTH_PROXY=...       # Optional, required for OAuth token exchange
+VITE_GITHUB_REDIRECT_URI=...      # Optional, exact OAuth callback URL (OAuth App/PAT flow)
+VITE_GITHUB_APP_REDIRECT_URI=...  # Optional, exact OAuth callback URL (GitHub App flow)
 VITE_BROWSER_TOOL_ENABLED=true    # Optional, enables browser tools in prompts
 VITE_API_PROXY_TARGET=...         # Optional, Vite /api proxy target (defaults to http://127.0.0.1:8787)
 ```

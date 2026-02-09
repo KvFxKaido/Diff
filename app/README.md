@@ -21,6 +21,8 @@ VITE_MOONSHOT_API_KEY=...         # Optional — or paste in Settings UI (sk-kim
 VITE_GITHUB_TOKEN=...             # Optional — higher GitHub rate limits
 VITE_GITHUB_CLIENT_ID=...         # Optional — enables OAuth login
 VITE_GITHUB_OAUTH_PROXY=...       # Optional — required for OAuth token exchange
+VITE_GITHUB_REDIRECT_URI=...      # Optional — exact OAuth callback URL (OAuth App/PAT flow)
+VITE_GITHUB_APP_REDIRECT_URI=...  # Optional — exact OAuth callback URL (GitHub App flow)
 ```
 
 Without a Kimi key the app runs in demo mode.
