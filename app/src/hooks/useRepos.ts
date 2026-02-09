@@ -134,6 +134,49 @@ async function fetchRecentCommitCount(
   }
 }
 
+function parseNextPage(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+  return match ? match[1] : null;
+}
+
+async function fetchAllUserRepos(headers: Record<string, string>): Promise<unknown[]> {
+  const all: unknown[] = [];
+  let url: string | null = 'https://api.github.com/user/repos?sort=pushed&direction=desc&per_page=100&page=1';
+  let pages = 0;
+  const MAX_PAGES = 10;
+
+  while (url && pages < MAX_PAGES) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error('Failed to fetch repos');
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error('Unexpected repos response from GitHub');
+    all.push(...data);
+    url = parseNextPage(res.headers.get('Link'));
+    pages++;
+  }
+
+  return all;
+}
+
+async function fetchAllInstallationRepos(headers: Record<string, string>): Promise<unknown[]> {
+  const all: unknown[] = [];
+  let url: string | null = 'https://api.github.com/installation/repositories?per_page=100&page=1';
+  let pages = 0;
+  const MAX_PAGES = 10;
+
+  while (url && pages < MAX_PAGES) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error('Failed to fetch installation repositories');
+    const payload = await res.json() as { repositories?: unknown[] };
+    all.push(...(payload.repositories ?? []));
+    url = parseNextPage(res.headers.get('Link'));
+    pages++;
+  }
+
+  return all;
+}
+
 export function useRepos() {
   const [repos, setRepos] = useState<RepoWithActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -171,13 +214,7 @@ export function useRepos() {
       let reposData: unknown;
       if (isGitHubAppAuth) {
         // Installation tokens are repo-scoped and cannot call /user.
-        const reposRes = await fetch(
-          'https://api.github.com/installation/repositories?per_page=100',
-          { headers },
-        );
-        if (!reposRes.ok) throw new Error('Failed to fetch installation repositories');
-        const payload = await reposRes.json() as { repositories?: unknown[] };
-        reposData = payload.repositories ?? [];
+        reposData = await fetchAllInstallationRepos(headers);
         setUserInfo(null);
       } else {
         // OAuth/PAT path has user context.
@@ -186,12 +223,7 @@ export function useRepos() {
         const userData = await userRes.json();
         setUserInfo({ login: userData.login, avatar_url: userData.avatar_url });
 
-        const reposRes = await fetch(
-          'https://api.github.com/user/repos?sort=pushed&direction=desc&per_page=100',
-          { headers },
-        );
-        if (!reposRes.ok) throw new Error('Failed to fetch repos');
-        reposData = await reposRes.json();
+        reposData = await fetchAllUserRepos(headers);
       }
 
       const previousPushed = getStoredPushedAt();
@@ -220,7 +252,7 @@ export function useRepos() {
         default_branch: r.default_branch,
         language: r.language ?? null,
         avatar_url: r.owner.avatar_url,
-      }));
+      })).sort((a, b) => b.pushed_at.localeCompare(a.pushed_at));
 
       // Fetch activity for top 10 repos (rate limit friendly)
       const top = summaries.slice(0, 10);

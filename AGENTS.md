@@ -12,6 +12,12 @@ Push is a personal chat interface backed by role-based AI agents. Users select a
 - Live pipeline — every agent step visible in real time
 - Show, don't dump — rich inline cards instead of walls of text
 
+## Planning Source of Truth
+
+- `ROADMAP.md` at repo root is the canonical, tracked plan.
+- `documents/` is the draft/spike workspace and may be exploratory or stale.
+- Agents should align implementation decisions to `ROADMAP.md` first, then use `documents/` as supporting context when referenced.
+
 ## Tech Stack
 
 | Layer | Technology |
