@@ -1,4 +1,5 @@
 import type { AIProviderType, AIProviderConfig, AIModel, AgentRole } from '@/types';
+import { resetMistralAgent } from './orchestrator';
 
 // Valid Ollama model names — these must exist on the Ollama server
 export const OLLAMA_DEFAULT_MODEL = 'gemini-3-flash-preview';
@@ -162,6 +163,8 @@ export function getMistralModelName(): string {
 
 export function setMistralModelName(model: string): void {
   localStorage.setItem(MISTRAL_MODEL_KEY, model.trim());
+  // Invalidate cached Mistral agent — it was created with the old model
+  resetMistralAgent();
 }
 
 // ---------------------------------------------------------------------------

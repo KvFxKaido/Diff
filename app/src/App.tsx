@@ -10,6 +10,7 @@ import { useActiveRepo } from '@/hooks/useActiveRepo';
 import { useMoonshotKey } from '@/hooks/useMoonshotKey';
 import { useOllamaConfig } from '@/hooks/useOllamaConfig';
 import { useMistralConfig } from '@/hooks/useMistralConfig';
+import { useTavilyConfig } from '@/hooks/useTavilyConfig';
 import { getPreferredProvider, setPreferredProvider, clearPreferredProvider, type PreferredProvider } from '@/lib/providers';
 import { getActiveProvider, getContextMode, setContextMode, type ContextMode } from '@/lib/orchestrator';
 import { fetchOllamaModels, fetchMistralModels } from '@/lib/model-catalog';
@@ -202,6 +203,7 @@ function App() {
   const { setKey: setKimiKey, clearKey: clearKimiKey, hasKey: hasKimiKey } = useMoonshotKey();
   const { setKey: setOllamaKey, clearKey: clearOllamaKey, hasKey: hasOllamaKey, model: ollamaModel, setModel: setOllamaModel } = useOllamaConfig();
   const { setKey: setMistralKey, clearKey: clearMistralKey, hasKey: hasMistralKey, model: mistralModel, setModel: setMistralModel } = useMistralConfig();
+  const { setKey: setTavilyKey, clearKey: clearTavilyKey, hasKey: hasTavilyKey } = useTavilyConfig();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'you' | 'workspace' | 'ai'>('you');
   const [isDemo, setIsDemo] = useState(false);
@@ -211,6 +213,7 @@ function App() {
   const [kimiKeyInput, setKimiKeyInput] = useState('');
   const [ollamaKeyInput, setOllamaKeyInput] = useState('');
   const [mistralKeyInput, setMistralKeyInput] = useState('');
+  const [tavilyKeyInput, setTavilyKeyInput] = useState('');
   const [activeBackend, setActiveBackend] = useState<PreferredProvider | null>(() => getPreferredProvider());
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [mistralModels, setMistralModels] = useState<string[]>([]);
@@ -1985,6 +1988,66 @@ function App() {
                 )}
               </div>
 
+            </div>
+
+            {/* Web Search (optional Tavily upgrade) */}
+            <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-[#fafafa]">
+                  Web Search
+                </label>
+                <span className="text-xs text-[#52525b]">Optional</span>
+              </div>
+              <div className="space-y-2">
+                {hasTavilyKey ? (
+                  <div className="space-y-2">
+                    <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
+                      <p className="text-sm text-[#a1a1aa] font-mono">Tavily Key Saved</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => clearTavilyKey()}
+                      className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                    >
+                      Remove key
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="password"
+                      value={tavilyKeyInput}
+                      onChange={(e) => setTavilyKeyInput(e.target.value)}
+                      placeholder="tvly-..."
+                      className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && tavilyKeyInput.trim()) {
+                          setTavilyKey(tavilyKeyInput.trim());
+                          setTavilyKeyInput('');
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (tavilyKeyInput.trim()) {
+                          setTavilyKey(tavilyKeyInput.trim());
+                          setTavilyKeyInput('');
+                        }
+                      }}
+                      disabled={!tavilyKeyInput.trim()}
+                      className="text-[#a1a1aa] hover:text-[#fafafa] w-full justify-start"
+                    >
+                      Save Tavily key
+                    </Button>
+                    <p className="text-xs text-[#52525b]">
+                      Not required — web search works without this. Add a Tavily API key for higher-quality, LLM-optimized results. Free tier: 1,000 searches/month.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Danger Zone */}

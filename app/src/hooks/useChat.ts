@@ -181,6 +181,8 @@ function getToolStatusLabel(toolCall: AnyToolCall): string {
       return 'Delegating to Coder...';
     case 'scratchpad':
       return 'Updating scratchpad...';
+    case 'web-search':
+      return 'Searching the web...';
     default:
       return 'Processing...';
   }

@@ -161,7 +161,8 @@ export type ChatCard =
   | { type: 'browser-extract'; data: BrowserExtractCardData }
   | { type: 'sandbox-download'; data: SandboxDownloadCardData }
   | { type: 'workflow-runs'; data: WorkflowRunsCardData }
-  | { type: 'workflow-logs'; data: WorkflowLogsCardData };
+  | { type: 'workflow-logs'; data: WorkflowLogsCardData }
+  | { type: 'web-search'; data: WebSearchCardData };
 
 // Tool execution returns text for the LLM + optional structured card for UI
 export interface ToolExecutionResult {
@@ -479,4 +480,15 @@ export interface WorkflowLogsCardData {
   jobs: WorkflowJob[];
   htmlUrl: string;
   repo: string;
+}
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  content: string;
+}
+
+export interface WebSearchCardData {
+  query: string;
+  results: WebSearchResult[];
 }

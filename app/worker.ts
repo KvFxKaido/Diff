@@ -89,6 +89,31 @@ export default {
       return handleMistralModels(request, env);
     }
 
+    // API route: Ollama web search proxy
+    if (url.pathname === '/api/ollama/search' && request.method === 'POST') {
+      return handleOllamaSearch(request, env);
+    }
+
+    // API route: Mistral agent creation proxy
+    if (url.pathname === '/api/mistral/agents' && request.method === 'POST') {
+      return handleMistralAgentCreate(request, env);
+    }
+
+    // API route: Mistral agent completions streaming proxy
+    if (url.pathname === '/api/mistral/agents/chat' && request.method === 'POST') {
+      return handleMistralAgentChat(request, env);
+    }
+
+    // API route: Tavily web search proxy (optional premium upgrade)
+    if (url.pathname === '/api/search/tavily' && request.method === 'POST') {
+      return handleTavilySearch(request, env);
+    }
+
+    // API route: free web search (DuckDuckGo HTML scraping — no API key needed)
+    if (url.pathname === '/api/search' && request.method === 'POST') {
+      return handleFreeSearch(request, env);
+    }
+
     // API route: sandbox proxy to Modal
     if (url.pathname.startsWith('/api/sandbox/') && request.method === 'POST') {
       const route = url.pathname.replace('/api/sandbox/', '');
@@ -857,6 +882,470 @@ async function handleMistralChat(request: Request, env: Env): Promise<Response> 
     const status = isTimeout ? 504 : 500;
     const error = isTimeout ? 'Mistral request timed out after 120 seconds' : message;
     console.error(`[api/mistral/chat] Unhandled: ${message}`);
+    return Response.json({ error }, { status });
+  }
+}
+
+// --- Ollama Web Search proxy ---
+
+async function handleOllamaSearch(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+
+  const now = Date.now();
+  cleanupRateLimitStore(now);
+  const rateLimit = checkRateLimit(getClientIp(request), now);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
+    );
+  }
+
+  const serverKey = env.OLLAMA_API_KEY;
+  const clientAuth = request.headers.get('Authorization');
+  const authHeader = serverKey ? `Bearer ${serverKey}` : clientAuth;
+
+  if (!authHeader) {
+    return Response.json(
+      { error: 'Ollama Cloud API key not configured. Add it in Settings or set OLLAMA_API_KEY on the Worker.' },
+      { status: 401 },
+    );
+  }
+
+  const bodyResult = await readBodyText(request, MAX_BODY_SIZE_BYTES);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+
+  console.log(`[api/ollama/search] Forwarding search request (${bodyResult.text.length} bytes)`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+    let upstream: Response;
+
+    try {
+      upstream = await fetch('https://ollama.com/api/web_search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: bodyResult.text,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!upstream.ok) {
+      const errBody = await upstream.text().catch(() => '');
+      return Response.json(
+        { error: `Ollama search error ${upstream.status}: ${errBody.slice(0, 200)}` },
+        { status: upstream.status },
+      );
+    }
+
+    const data: unknown = await upstream.json();
+    return Response.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    const status = isTimeout ? 504 : 500;
+    const error = isTimeout ? 'Ollama search timed out after 30 seconds' : message;
+    console.error(`[api/ollama/search] Error: ${message}`);
+    return Response.json({ error }, { status });
+  }
+}
+
+// --- Mistral Agents API proxies ---
+
+async function handleMistralAgentCreate(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+
+  const now = Date.now();
+  cleanupRateLimitStore(now);
+  const rateLimit = checkRateLimit(getClientIp(request), now);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
+    );
+  }
+
+  const serverKey = env.MISTRAL_API_KEY;
+  const clientAuth = request.headers.get('Authorization');
+  const authHeader = serverKey ? `Bearer ${serverKey}` : clientAuth;
+
+  if (!authHeader) {
+    return Response.json(
+      { error: 'Mistral API key not configured. Add it in Settings or set MISTRAL_API_KEY on the Worker.' },
+      { status: 401 },
+    );
+  }
+
+  const bodyResult = await readBodyText(request, MAX_BODY_SIZE_BYTES);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+
+  console.log(`[api/mistral/agents] Creating agent (${bodyResult.text.length} bytes)`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+    let upstream: Response;
+
+    try {
+      upstream = await fetch('https://api.mistral.ai/v1/agents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: bodyResult.text,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!upstream.ok) {
+      const errBody = await upstream.text().catch(() => '');
+      console.error(`[api/mistral/agents] Upstream ${upstream.status}: ${errBody.slice(0, 500)}`);
+      return Response.json(
+        { error: `Mistral Agents API error ${upstream.status}: ${errBody.slice(0, 200)}` },
+        { status: upstream.status },
+      );
+    }
+
+    const data: unknown = await upstream.json();
+    return Response.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    const status = isTimeout ? 504 : 500;
+    const error = isTimeout ? 'Mistral agent creation timed out after 30 seconds' : message;
+    console.error(`[api/mistral/agents] Error: ${message}`);
+    return Response.json({ error }, { status });
+  }
+}
+
+async function handleMistralAgentChat(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+
+  const now = Date.now();
+  cleanupRateLimitStore(now);
+  const rateLimit = checkRateLimit(getClientIp(request), now);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
+    );
+  }
+
+  const serverKey = env.MISTRAL_API_KEY;
+  const clientAuth = request.headers.get('Authorization');
+  const authHeader = serverKey ? `Bearer ${serverKey}` : clientAuth;
+
+  if (!authHeader) {
+    return Response.json(
+      { error: 'Mistral API key not configured. Add it in Settings or set MISTRAL_API_KEY on the Worker.' },
+      { status: 401 },
+    );
+  }
+
+  const bodyResult = await readBodyText(request, MAX_BODY_SIZE_BYTES);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+
+  console.log(`[api/mistral/agents/chat] Forwarding request (${bodyResult.text.length} bytes)`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120_000); // 2 min
+    let upstream: Response;
+
+    try {
+      upstream = await fetch('https://api.mistral.ai/v1/agents/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader,
+        },
+        body: bodyResult.text,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    console.log(`[api/mistral/agents/chat] Upstream responded: ${upstream.status}`);
+
+    if (!upstream.ok) {
+      const errBody = await upstream.text().catch(() => '');
+      console.error(`[api/mistral/agents/chat] Upstream ${upstream.status}: ${errBody.slice(0, 500)}`);
+      return Response.json(
+        { error: `Mistral Agents API error ${upstream.status}: ${errBody.slice(0, 200)}` },
+        { status: upstream.status },
+      );
+    }
+
+    // SSE streaming: pipe upstream body straight through
+    if (upstream.body) {
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
+
+    // Non-streaming fallback
+    const data: unknown = await upstream.json();
+    return Response.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    const status = isTimeout ? 504 : 500;
+    const error = isTimeout ? 'Mistral agent chat timed out after 120 seconds' : message;
+    console.error(`[api/mistral/agents/chat] Error: ${message}`);
+    return Response.json({ error }, { status });
+  }
+}
+
+// --- Tavily web search proxy (optional premium upgrade) ---
+
+async function handleTavilySearch(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+
+  const now = Date.now();
+  cleanupRateLimitStore(now);
+  const rateLimit = checkRateLimit(getClientIp(request), now);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
+    );
+  }
+
+  // Tavily API key comes from the client (same pattern as AI provider keys)
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!apiKey) {
+    return Response.json({ error: 'Missing Tavily API key in Authorization header' }, { status: 401 });
+  }
+
+  const bodyResult = await readBodyText(request, MAX_BODY_SIZE_BYTES);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+
+  let query: string;
+  try {
+    const parsed = JSON.parse(bodyResult.text) as { query?: string };
+    if (!parsed.query || typeof parsed.query !== 'string') {
+      return Response.json({ error: 'Missing "query" field' }, { status: 400 });
+    }
+    query = parsed.query.trim();
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  console.log(`[api/search/tavily] Tavily search: "${query}"`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+    let upstream: Response;
+
+    try {
+      upstream = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          search_depth: 'basic',
+          max_results: 5,
+          include_answer: false,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!upstream.ok) {
+      const errBody = await upstream.text().catch(() => '');
+      console.error(`[api/search/tavily] Tavily returned ${upstream.status}: ${errBody.slice(0, 200)}`);
+      return Response.json(
+        { error: `Tavily returned ${upstream.status}: ${errBody.slice(0, 200)}` },
+        { status: upstream.status },
+      );
+    }
+
+    // Tavily returns { results: [{ title, url, content, score, ... }] }
+    // Normalize to our WebSearchResult shape: { title, url, content }
+    const data = (await upstream.json()) as {
+      results?: { title: string; url: string; content: string; score?: number }[];
+    };
+    const results = (data.results || []).slice(0, 5).map((r) => ({
+      title: r.title,
+      url: r.url,
+      content: r.content,
+    }));
+
+    console.log(`[api/search/tavily] Got ${results.length} results for "${query}"`);
+    return Response.json({ results });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    const status = isTimeout ? 504 : 500;
+    const error = isTimeout ? 'Tavily search timed out after 30 seconds' : message;
+    console.error(`[api/search/tavily] Error: ${message}`);
+    return Response.json({ error }, { status });
+  }
+}
+
+// --- Free web search (DuckDuckGo HTML scraping) ---
+
+/**
+ * Parse DuckDuckGo HTML lite search results into structured JSON.
+ * The lite page (html.duckduckgo.com/html/) has a simple, stable structure
+ * designed for low-bandwidth clients. We extract titles, URLs, and snippets.
+ */
+function parseDuckDuckGoHTML(html: string): { title: string; url: string; content: string }[] {
+  const results: { title: string; url: string; content: string }[] = [];
+
+  // Match result blocks: <a class="result__a" href="URL">TITLE</a>
+  // followed by <a class="result__snippet" ...>SNIPPET</a>
+  const resultBlockRegex = /<a[^>]+class="result__a"[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+  const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+
+  // Collect all result links
+  const links: { url: string; title: string }[] = [];
+  let match;
+  while ((match = resultBlockRegex.exec(html)) !== null) {
+    const rawUrl = match[1];
+    const rawTitle = match[2].replace(/<[^>]*>/g, '').trim();
+    if (rawUrl && rawTitle && rawUrl.startsWith('http')) {
+      links.push({ url: decodeURIComponent(rawUrl), title: rawTitle });
+    }
+  }
+
+  // Collect all snippets
+  const snippets: string[] = [];
+  while ((match = snippetRegex.exec(html)) !== null) {
+    snippets.push(match[1].replace(/<[^>]*>/g, '').trim());
+  }
+
+  // Pair them up
+  for (let i = 0; i < links.length && i < 5; i++) {
+    results.push({
+      title: links[i].title,
+      url: links[i].url,
+      content: snippets[i] || '',
+    });
+  }
+
+  return results;
+}
+
+async function handleFreeSearch(request: Request, env: Env): Promise<Response> {
+  const requestUrl = new URL(request.url);
+  const originCheck = validateOrigin(request, requestUrl, env);
+  if (!originCheck.ok) {
+    return Response.json({ error: originCheck.error }, { status: 403 });
+  }
+
+  const now = Date.now();
+  cleanupRateLimitStore(now);
+  const rateLimit = checkRateLimit(getClientIp(request), now);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: 'Rate limit exceeded. Try again later.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } },
+    );
+  }
+
+  const bodyResult = await readBodyText(request, MAX_BODY_SIZE_BYTES);
+  if (!bodyResult.ok) {
+    return Response.json({ error: bodyResult.error }, { status: bodyResult.status });
+  }
+
+  let query: string;
+  try {
+    const parsed = JSON.parse(bodyResult.text) as { query?: string };
+    if (!parsed.query || typeof parsed.query !== 'string') {
+      return Response.json({ error: 'Missing "query" field' }, { status: 400 });
+    }
+    query = parsed.query.trim();
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  console.log(`[api/search] DuckDuckGo search: "${query}"`);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+    let upstream: Response;
+
+    try {
+      upstream = await fetch(
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+        {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Push/1.0 (AI Coding Assistant)',
+          },
+          signal: controller.signal,
+        },
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!upstream.ok) {
+      return Response.json(
+        { error: `DuckDuckGo returned ${upstream.status}` },
+        { status: upstream.status },
+      );
+    }
+
+    const html = await upstream.text();
+    const results = parseDuckDuckGoHTML(html);
+
+    console.log(`[api/search] Parsed ${results.length} results for "${query}"`);
+    return Response.json({ results });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    const status = isTimeout ? 504 : 500;
+    const error = isTimeout ? 'Search timed out after 15 seconds' : message;
+    console.error(`[api/search] Error: ${message}`);
     return Response.json({ error }, { status });
   }
 }

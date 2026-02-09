@@ -11,6 +11,8 @@ import type { ToolExecutionResult } from '@/types';
 import { detectToolCall, executeToolCall, type ToolCall } from './github-tools';
 import { detectSandboxToolCall, executeSandboxToolCall, type SandboxToolCall } from './sandbox-tools';
 import { detectScratchpadToolCall, type ScratchpadToolCall } from './scratchpad-tools';
+import { detectWebSearchToolCall, executeWebSearch, type WebSearchToolCall } from './web-search-tools';
+import { getActiveProvider } from './orchestrator';
 
 // ---------------------------------------------------------------------------
 // Shared: brace-counting JSON extractor (handles nested objects)
@@ -83,7 +85,8 @@ export type AnyToolCall =
   | { source: 'github'; call: ToolCall }
   | { source: 'sandbox'; call: SandboxToolCall }
   | { source: 'delegate'; call: { tool: 'delegate_coder'; args: { task?: string; tasks?: string[]; files?: string[] } } }
-  | { source: 'scratchpad'; call: ScratchpadToolCall };
+  | { source: 'scratchpad'; call: ScratchpadToolCall }
+  | { source: 'web-search'; call: WebSearchToolCall };
 
 /**
  * Scan assistant output for any tool call (GitHub, Sandbox, Scratchpad, or delegation).
@@ -97,6 +100,10 @@ export function detectAnyToolCall(text: string): AnyToolCall | null {
   // Check scratchpad tools (set_scratchpad, append_scratchpad)
   const scratchpadCall = detectScratchpadToolCall(text);
   if (scratchpadCall) return { source: 'scratchpad', call: scratchpadCall };
+
+  // Check web search tool
+  const webSearchCall = detectWebSearchToolCall(text);
+  if (webSearchCall) return { source: 'web-search', call: webSearchCall };
 
   // Check sandbox tools (sandbox_ prefix)
   const sandboxCall = detectSandboxToolCall(text);
@@ -139,6 +146,12 @@ export async function executeAnyToolCall(
       // Scratchpad is handled at a higher level (useChat), not here.
       // Return a placeholder — useChat intercepts this before it reaches here.
       return { text: '[Tool Error] Scratchpad must be handled by the chat hook.' };
+
+    case 'web-search': {
+      // Route through unified search: Tavily (if key set) → provider-native → DuckDuckGo free
+      const provider = getActiveProvider();
+      return executeWebSearch(toolCall.call.args.query, provider);
+    }
 
     default:
       return { text: '[Tool Error] Unknown tool source.' };

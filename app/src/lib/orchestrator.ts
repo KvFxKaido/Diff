@@ -2,6 +2,7 @@ import type { ChatMessage } from '@/types';
 import { TOOL_PROTOCOL } from './github-tools';
 import { SANDBOX_TOOL_PROTOCOL } from './sandbox-tools';
 import { SCRATCHPAD_TOOL_PROTOCOL, buildScratchpadContext } from './scratchpad-tools';
+import { WEB_SEARCH_TOOL_PROTOCOL } from './web-search-tools';
 import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 import { getOllamaKey } from '@/hooks/useOllamaConfig';
 import { getMistralKey } from '@/hooks/useMistralConfig';
@@ -67,6 +68,62 @@ const OLLAMA_API_URL = import.meta.env.DEV
 const MISTRAL_API_URL = import.meta.env.DEV
   ? '/mistral/v1/chat/completions'
   : '/api/mistral/chat';
+
+// Mistral Agents API — enables native web search via agent with web_search tool.
+// Dev: Vite proxy rewrites /mistral/ → https://api.mistral.ai/.
+// Prod: Worker routes /api/mistral/agents* → api.mistral.ai/v1/agents*.
+const MISTRAL_AGENTS_CREATE_URL = import.meta.env.DEV
+  ? '/mistral/v1/agents'
+  : '/api/mistral/agents';
+const MISTRAL_AGENTS_COMPLETIONS_URL = import.meta.env.DEV
+  ? '/mistral/v1/agents/completions'
+  : '/api/mistral/agents/chat';
+
+// Cached Mistral agent — created once per model, reused across requests
+let mistralAgentId: string | null = null;
+let mistralAgentModel: string | null = null;
+
+/**
+ * Ensure a Mistral agent exists with web_search enabled.
+ * Returns the cached agent_id, or creates one if needed.
+ */
+async function ensureMistralAgent(apiKey: string, model: string): Promise<string> {
+  // Return cached agent if model hasn't changed
+  if (mistralAgentId && mistralAgentModel === model) {
+    return mistralAgentId;
+  }
+
+  const response = await fetch(MISTRAL_AGENTS_CREATE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      name: 'push-orchestrator',
+      tools: [{ type: 'web_search' }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    console.error('[Push] Mistral agent creation failed:', response.status, errBody.slice(0, 200));
+    throw new Error(`Failed to create Mistral agent: ${response.status}`);
+  }
+
+  const data = (await response.json()) as { id: string };
+  mistralAgentId = data.id;
+  mistralAgentModel = model;
+  console.log(`[Push] Created Mistral agent: ${mistralAgentId} (model: ${model})`);
+  return mistralAgentId;
+}
+
+/** Clear cached Mistral agent (call when user changes model in Settings). */
+export function resetMistralAgent(): void {
+  mistralAgentId = null;
+  mistralAgentModel = null;
+}
 
 // Context mode config (runtime toggle from Settings)
 const CONTEXT_MODE_STORAGE_KEY = 'push_context_mode';
@@ -409,6 +466,7 @@ function toLLMMessages(
   hasSandbox?: boolean,
   systemPromptOverride?: string,
   scratchpadContent?: string,
+  providerType?: 'moonshot' | 'ollama' | 'mistral',
 ): LLMMessage[] {
   // Build system prompt: base + user identity + workspace context + tool protocol + optional sandbox tools + scratchpad
   let systemContent = systemPromptOverride || ORCHESTRATOR_SYSTEM_PROMPT;
@@ -437,6 +495,14 @@ function toLLMMessages(
   systemContent += '\n' + SCRATCHPAD_TOOL_PROTOCOL;
   if (scratchpadContent !== undefined) {
     systemContent += '\n\n' + buildScratchpadContext(scratchpadContent);
+  }
+
+  // Web search tool — prompt-engineered for providers that need client-side dispatch.
+  // Ollama: model outputs JSON → we execute via Ollama's search REST API.
+  // Kimi (moonshot): model outputs JSON → we execute via free DuckDuckGo SERP.
+  // Mistral: handles search natively via Agents API (no prompt needed here).
+  if (providerType === 'ollama' || providerType === 'moonshot') {
+    systemContent += '\n' + WEB_SEARCH_TOOL_PROTOCOL;
   }
 
   const llmMessages: LLMMessage[] = [
@@ -664,6 +730,12 @@ interface StreamProviderConfig {
   parseError: (parsed: unknown, fallback: string) => string;
   checkFinishReason: (choice: unknown) => boolean;
   shouldResetStallOnReasoning?: boolean;
+  /** Provider identity — used to conditionally inject provider-specific tool protocols */
+  providerType?: 'moonshot' | 'ollama' | 'mistral';
+  /** Override the fetch URL (e.g., Mistral Agents API uses a different endpoint) */
+  apiUrlOverride?: string;
+  /** Transform the request body before sending (e.g., swap model for agent_id) */
+  bodyTransform?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
 interface AutoRetryConfig {
@@ -748,6 +820,9 @@ async function streamSSEChatOnce(
     parseError,
     checkFinishReason,
     shouldResetStallOnReasoning = false,
+    providerType,
+    apiUrlOverride,
+    bodyTransform,
   } = config;
 
   const controller = new AbortController();
@@ -794,19 +869,25 @@ async function streamSSEChatOnce(
   };
 
   try {
-    console.log(`[Push] POST ${apiUrl} (model: ${model})`);
+    const requestUrl = apiUrlOverride || apiUrl;
+    console.log(`[Push] POST ${requestUrl} (model: ${model})`);
 
-    const response = await fetch(apiUrl, {
+    let requestBody: Record<string, unknown> = {
+      model,
+      messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent, providerType),
+      stream: true,
+    };
+    if (bodyTransform) {
+      requestBody = bodyTransform(requestBody);
+    }
+
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent),
-        stream: true,
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
@@ -1001,6 +1082,7 @@ export async function streamMoonshotChat(
       },
       parseError: (p, f) => parseProviderError(p, f),
       checkFinishReason: (c) => hasFinishReason(c, ['stop', 'end_turn', 'tool_calls']),
+      providerType: 'moonshot',
     },
     messages,
     onToken,
@@ -1059,6 +1141,7 @@ export async function streamOllamaChat(
       parseError: (p, f) => parseProviderError(p, f),
       checkFinishReason: (c) => hasFinishReason(c, ['stop', 'end_turn', 'length']),
       shouldResetStallOnReasoning: true,
+      providerType: 'ollama',
     },
     messages,
     onToken,
@@ -1096,12 +1179,31 @@ export async function streamMistralChat(
     return;
   }
 
+  const model = modelOverride || getMistralModelName();
+
+  // Try to create/reuse a Mistral agent with web_search for native search.
+  // On failure, fall back to regular chat completions (no search but chat works).
+  let agentApiUrl: string | undefined;
+  let agentBodyTransform: ((body: Record<string, unknown>) => Record<string, unknown>) | undefined;
+
+  try {
+    const agentId = await ensureMistralAgent(apiKey, model);
+    agentApiUrl = MISTRAL_AGENTS_COMPLETIONS_URL;
+    agentBodyTransform = (body) => ({
+      agent_id: agentId,
+      messages: body.messages,
+      stream: true,
+    });
+  } catch (err) {
+    console.warn('[Push] Mistral agent creation failed, falling back to chat completions:', err);
+  }
+
   return streamSSEChat(
     {
       name: 'Mistral',
       apiUrl: MISTRAL_API_URL,
       apiKey,
-      model: modelOverride || getMistralModelName(),
+      model,
       connectTimeoutMs: 30_000,
       idleTimeoutMs: 60_000,
       stallTimeoutMs: 30_000,
@@ -1116,6 +1218,9 @@ export async function streamMistralChat(
       },
       parseError: (p, f) => parseProviderError(p, f, true),
       checkFinishReason: (c) => hasFinishReason(c, ['stop', 'end_turn', 'length']),
+      providerType: 'mistral',
+      apiUrlOverride: agentApiUrl,
+      bodyTransform: agentBodyTransform,
     },
     messages,
     onToken,
