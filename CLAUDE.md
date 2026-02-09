@@ -2,6 +2,11 @@
 
 ChatGPT with direct access to your repos. A personal, mobile-first chat interface backed by role-based AI agents that can read your code, write patches, run them in a sandbox, and commit/push changes.
 
+## Planning Source of Truth
+
+- `ROADMAP.md` (repo root) is the canonical, tracked plan for active work.
+- `documents/` is a draft/workspace area; use `documents/README.md` to identify active vs historical docs.
+
 ## Quick Start
 
 ```bash

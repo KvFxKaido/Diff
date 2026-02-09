@@ -2,6 +2,11 @@
 
 **Mobile-native AI coding agent with direct GitHub repo access.**
 
+## Planning Source of Truth
+
+*   `ROADMAP.md` (repo root) is the canonical, tracked plan for active work.
+*   `documents/` is a draft/workspace area; use `documents/README.md` to identify active vs historical docs.
+
 Push is a personal chat interface backed by role-based AI agents (Orchestrator, Coder, Auditor) designed for reviewing PRs, exploring codebases, and shipping changes from a mobile device.
 
 ## Project Overview
