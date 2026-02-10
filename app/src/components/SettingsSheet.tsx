@@ -1,0 +1,1022 @@
+import { Trash2, GitBranch, RefreshCw, Loader2 } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import type { AIProviderType, SandboxStateCardData } from '@/types';
+import type { PreferredProvider } from '@/lib/providers';
+import type { ContextMode } from '@/lib/orchestrator';
+import type { SandboxStartMode } from '@/lib/sandbox-start-mode';
+
+const PROVIDER_LABELS: Record<AIProviderType, string> = {
+  ollama: 'Ollama',
+  moonshot: 'Kimi',
+  mistral: 'Mistral',
+  demo: 'Demo',
+};
+
+// ── Prop groups ──────────────────────────────────────────────────────
+
+export interface SettingsAuthProps {
+  isConnected: boolean;
+  isDemo: boolean;
+  isAppAuth: boolean;
+  installationId: string;
+  token: string;
+  patToken: string;
+  validatedUser: { login: string } | null;
+  appLoading: boolean;
+  appError: string | null;
+  connectApp: () => void;
+  installApp: () => void;
+  showInstallIdInput: boolean;
+  setShowInstallIdInput: (v: boolean) => void;
+  installIdInput: string;
+  setInstallIdInput: (v: string) => void;
+  setInstallationIdManually: (id: string) => Promise<boolean>;
+  allowlistSecretCmd: string;
+  copyAllowlistCommand: () => void;
+  onDisconnect: () => void;
+}
+
+export interface SettingsProfileProps {
+  displayNameDraft: string;
+  setDisplayNameDraft: (v: string) => void;
+  onDisplayNameBlur: () => void;
+  bioDraft: string;
+  setBioDraft: (v: string) => void;
+  onBioBlur: () => void;
+  profile: { displayName: string; bio: string; githubLogin?: string };
+  clearProfile: () => void;
+  validatedUser: { login: string } | null;
+}
+
+export interface SettingsAIProps {
+  activeProviderLabel: AIProviderType;
+  activeBackend: PreferredProvider | null;
+  setActiveBackend: (v: PreferredProvider | null) => void;
+  isProviderLocked: boolean;
+  lockedProvider: AIProviderType | null;
+  lockedModel: string | null;
+  availableProviders: readonly (readonly [string, string, boolean])[];
+  setPreferredProvider: (v: PreferredProvider) => void;
+  clearPreferredProvider: () => void;
+  // Ollama
+  hasOllamaKey: boolean;
+  ollamaModel: string;
+  setOllamaModel: (v: string) => void;
+  ollamaModelOptions: string[];
+  ollamaModelsLoading: boolean;
+  ollamaModelsError: string | null;
+  ollamaModelsUpdatedAt: number | null;
+  isOllamaModelLocked: boolean;
+  refreshOllamaModels: () => void;
+  ollamaKeyInput: string;
+  setOllamaKeyInput: (v: string) => void;
+  setOllamaKey: (v: string) => void;
+  clearOllamaKey: () => void;
+  // Kimi
+  hasKimiKey: boolean;
+  kimiKeyInput: string;
+  setKimiKeyInput: (v: string) => void;
+  setKimiKey: (v: string) => void;
+  clearKimiKey: () => void;
+  // Mistral
+  hasMistralKey: boolean;
+  mistralModel: string;
+  setMistralModel: (v: string) => void;
+  mistralModelOptions: string[];
+  mistralModelsLoading: boolean;
+  mistralModelsError: string | null;
+  mistralModelsUpdatedAt: number | null;
+  isMistralModelLocked: boolean;
+  refreshMistralModels: () => void;
+  mistralKeyInput: string;
+  setMistralKeyInput: (v: string) => void;
+  setMistralKey: (v: string) => void;
+  clearMistralKey: () => void;
+  // Tavily
+  hasTavilyKey: boolean;
+  tavilyKeyInput: string;
+  setTavilyKeyInput: (v: string) => void;
+  setTavilyKey: (v: string) => void;
+  clearTavilyKey: () => void;
+}
+
+export interface SettingsWorkspaceProps {
+  contextMode: ContextMode;
+  updateContextMode: (mode: ContextMode) => void;
+  sandboxStartMode: SandboxStartMode;
+  updateSandboxStartMode: (mode: SandboxStartMode) => void;
+  sandboxStatus: 'idle' | 'creating' | 'ready' | 'error';
+  sandboxId: string | null;
+  sandboxError: string | null;
+  sandboxState: SandboxStateCardData | null;
+  sandboxStateLoading: boolean;
+  fetchSandboxState: (id: string) => void;
+}
+
+export interface SettingsDataProps {
+  activeRepo: { name: string } | null;
+  deleteAllChats: () => void;
+}
+
+export interface SettingsSheetProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  settingsTab: 'you' | 'workspace' | 'ai';
+  setSettingsTab: (tab: 'you' | 'workspace' | 'ai') => void;
+  auth: SettingsAuthProps;
+  profile: SettingsProfileProps;
+  ai: SettingsAIProps;
+  workspace: SettingsWorkspaceProps;
+  data: SettingsDataProps;
+}
+
+// ── Component ────────────────────────────────────────────────────────
+
+export function SettingsSheet({
+  open,
+  onOpenChange,
+  settingsTab,
+  setSettingsTab,
+  auth,
+  profile,
+  ai,
+  workspace,
+  data,
+}: SettingsSheetProps) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="bg-[#000] border-[#1a1a1a] flex flex-col overflow-hidden">
+        <SheetHeader className="shrink-0">
+          <SheetTitle className="text-[#fafafa]">Settings</SheetTitle>
+          <SheetDescription className="text-[#a1a1aa]">
+            Connect GitHub and configure your workspace.
+          </SheetDescription>
+        </SheetHeader>
+
+        {/* Tab bar */}
+        <div className="flex gap-1 px-4 pt-1 pb-2 shrink-0">
+          {([['you', 'You'], ['workspace', 'Workspace'], ['ai', 'AI']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSettingsTab(key)}
+              className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                settingsTab === key
+                  ? 'bg-[#1a1a1a] text-[#fafafa]'
+                  : 'text-[#52525b] hover:text-[#a1a1aa]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-6 px-4 pt-2 pb-8">
+          {/* ── You tab ── */}
+          {settingsTab === 'you' && (
+          <>
+          {/* GitHub Connection */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-[#fafafa]">
+                GitHub
+              </label>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    auth.isConnected ? 'bg-emerald-500' : 'bg-[#52525b]'
+                  }`}
+                />
+                <span className="text-xs text-[#a1a1aa]">
+                  {auth.isDemo
+                    ? 'Demo mode'
+                    : auth.isConnected
+                    ? `Connected${auth.validatedUser ? ` as ${auth.validatedUser.login}` : ''}`
+                    : 'Not connected'}
+                </span>
+              </div>
+            </div>
+
+            {auth.isConnected && (
+              <div className="space-y-2">
+                {!auth.isDemo && (
+                  <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
+                    <p className="text-sm text-[#a1a1aa] font-mono">
+                      {auth.isAppAuth ? (
+                        <span className="text-emerald-400">GitHub App</span>
+                      ) : auth.token.startsWith('ghp_') ? (
+                        'ghp_••••••••'
+                      ) : (
+                        'Token saved'
+                      )}
+                    </p>
+                    {auth.isAppAuth && (
+                      <p className="text-xs text-[#52525b] mt-1">
+                        Auto-refreshing token
+                      </p>
+                    )}
+                    {auth.isAppAuth && auth.installationId && (
+                      <p className="text-xs text-[#71717a] mt-1 font-mono">
+                        Installation ID: {auth.installationId}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {/* Upgrade to GitHub App (shown when using PAT) */}
+                {!auth.isDemo && !auth.isAppAuth && auth.patToken && (
+                  <div className="space-y-2">
+                    {auth.showInstallIdInput ? (
+                      <>
+                        <input
+                          type="text"
+                          value={auth.installIdInput}
+                          onChange={(e) => auth.setInstallIdInput(e.target.value)}
+                          placeholder="Installation ID (e.g., 12345678)"
+                          className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46] font-mono"
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter' && auth.installIdInput.trim()) {
+                              const success = await auth.setInstallationIdManually(auth.installIdInput.trim());
+                              if (success) {
+                                auth.setInstallIdInput('');
+                                auth.setShowInstallIdInput(false);
+                              }
+                            }
+                          }}
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async () => {
+                              if (auth.installIdInput.trim()) {
+                                const success = await auth.setInstallationIdManually(auth.installIdInput.trim());
+                                if (success) {
+                                  auth.setInstallIdInput('');
+                                  auth.setShowInstallIdInput(false);
+                                }
+                              }
+                            }}
+                            disabled={!auth.installIdInput.trim() || auth.appLoading}
+                            className="text-[#0070f3] hover:text-[#0060d3] flex-1"
+                          >
+                            {auth.appLoading ? 'Connecting...' : 'Connect'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => auth.setShowInstallIdInput(false)}
+                            className="text-[#52525b] hover:text-[#a1a1aa]"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                        <p className="text-xs text-[#52525b]">
+                          Find your ID at github.com/settings/installations
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            auth.connectApp();
+                            onOpenChange(false);
+                          }}
+                          className="text-[#0070f3] hover:text-[#0060d3] w-full justify-start"
+                        >
+                          ⬆️ Connect with GitHub
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            auth.installApp();
+                            onOpenChange(false);
+                          }}
+                          className="text-[#52525b] hover:text-[#a1a1aa] w-full justify-start text-xs"
+                        >
+                          Install GitHub App (first time)
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => auth.setShowInstallIdInput(true)}
+                          className="text-[#52525b] hover:text-[#a1a1aa] w-full justify-start text-xs"
+                        >
+                          Enter installation ID manually
+                        </Button>
+                      </>
+                    )}
+                    {auth.appError && (
+                      <div className="space-y-1">
+                        <p className="text-xs text-red-400">{auth.appError}</p>
+                        {auth.appError.includes('GITHUB_ALLOWED_INSTALLATION_IDS') && (
+                          <div className="text-[11px] text-[#71717a]">
+                            <p>Ask the deployment admin to run:</p>
+                            <div className="mt-1 flex items-center gap-2">
+                              <code className="font-mono text-[#a1a1aa]">{auth.allowlistSecretCmd}</code>
+                              <button
+                                type="button"
+                                onClick={auth.copyAllowlistCommand}
+                                className="rounded border border-[#27272a] px-2 py-0.5 text-[10px] text-[#a1a1aa] hover:text-[#fafafa] hover:border-[#3f3f46]"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    auth.onDisconnect();
+                    onOpenChange(false);
+                  }}
+                  className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                >
+                  Disconnect
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* About You */}
+          <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+            <label className="text-sm font-medium text-[#fafafa]">
+              About You
+            </label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[#a1a1aa]">
+                Your Name
+              </label>
+              <input
+                type="text"
+                value={profile.displayNameDraft}
+                onChange={(e) => profile.setDisplayNameDraft(e.target.value)}
+                onBlur={profile.onDisplayNameBlur}
+                placeholder="Your name"
+                className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+              />
+            </div>
+
+            {profile.validatedUser && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#a1a1aa]">
+                  GitHub
+                </label>
+                <div className="text-xs text-[#a1a1aa] font-mono">
+                  @{profile.profile.githubLogin || profile.validatedUser.login}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[#a1a1aa]">
+                About You
+              </label>
+              <textarea
+                value={profile.bioDraft}
+                onChange={(e) => profile.setBioDraft(e.target.value.slice(0, 300))}
+                onBlur={profile.onBioBlur}
+                rows={3}
+                maxLength={300}
+                placeholder="Anything you want the assistant to know about you"
+                className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46] resize-none"
+              />
+              <p className="text-[10px] text-[#52525b]">
+                {profile.bioDraft.length}/300
+              </p>
+            </div>
+
+            {profile.profile.displayName.trim().length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  profile.clearProfile();
+                  profile.setDisplayNameDraft('');
+                  profile.setBioDraft('');
+                }}
+                className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+              >
+                Clear Profile
+              </Button>
+            )}
+          </div>
+          </>
+          )}
+
+          {/* ── Workspace tab ── */}
+          {settingsTab === 'workspace' && (<>
+          {/* Context Mode */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-[#fafafa]">
+                Context Mode
+              </label>
+              <span className="text-xs text-[#a1a1aa]">
+                {workspace.contextMode === 'graceful' ? 'Graceful digest' : 'No trimming'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => workspace.updateContextMode('graceful')}
+                className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  workspace.contextMode === 'graceful'
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                    : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
+                }`}
+              >
+                Graceful Digest
+              </button>
+              <button
+                type="button"
+                onClick={() => workspace.updateContextMode('none')}
+                className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  workspace.contextMode === 'none'
+                    ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                    : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
+                }`}
+              >
+                No Trimming
+              </button>
+            </div>
+            {workspace.contextMode === 'none' && (
+              <p className="text-[11px] text-[#a1a1aa]">
+                No trimming can hit model context limits on long chats and cause failures.
+              </p>
+            )}
+          </div>
+
+          {/* Sandbox Start Mode */}
+          <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-[#fafafa]">
+                Sandbox Start Mode
+              </label>
+              <span className="text-xs text-[#a1a1aa]">
+                {workspace.sandboxStartMode === 'off' ? 'Off' : workspace.sandboxStartMode === 'smart' ? 'Smart' : 'Always'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => workspace.updateSandboxStartMode('off')}
+                className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                  workspace.sandboxStartMode === 'off'
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                    : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
+                }`}
+              >
+                Off
+              </button>
+              <button
+                type="button"
+                onClick={() => workspace.updateSandboxStartMode('smart')}
+                className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                  workspace.sandboxStartMode === 'smart'
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                    : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
+                }`}
+              >
+                Smart
+              </button>
+              <button
+                type="button"
+                onClick={() => workspace.updateSandboxStartMode('always')}
+                className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                  workspace.sandboxStartMode === 'always'
+                    ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                    : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
+                }`}
+              >
+                Always
+              </button>
+            </div>
+            <p className="text-[11px] text-[#a1a1aa]">
+              Smart prewarms sandbox for likely coding prompts. Always prewarms on every message.
+            </p>
+          </div>
+
+          {/* Sandbox State */}
+          {workspace.sandboxStatus !== 'idle' && (
+            <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-[#fafafa]">
+                  Sandbox
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <div className={`h-2 w-2 rounded-full ${
+                    workspace.sandboxStatus === 'ready' ? 'bg-emerald-500' :
+                    workspace.sandboxStatus === 'creating' ? 'bg-[#f59e0b] animate-pulse' :
+                    workspace.sandboxStatus === 'error' ? 'bg-red-500' : 'bg-[#52525b]'
+                  }`} />
+                  <span className="text-xs text-[#a1a1aa]">
+                    {workspace.sandboxStatus === 'ready' ? 'Running' :
+                     workspace.sandboxStatus === 'creating' ? 'Starting...' :
+                     workspace.sandboxStatus === 'error' ? 'Error' : 'Idle'}
+                  </span>
+                </div>
+              </div>
+
+              {workspace.sandboxState && workspace.sandboxStatus === 'ready' && (
+                <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] overflow-hidden">
+                  <div className="px-3 py-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GitBranch className="h-3.5 w-3.5 text-[#71717a]" />
+                      <span className="text-xs text-[#e4e4e7] font-mono truncate">{workspace.sandboxState.branch}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${
+                        workspace.sandboxState.changedFiles > 0
+                          ? 'bg-[#f59e0b]/15 text-[#f59e0b]'
+                          : 'bg-[#22c55e]/15 text-[#22c55e]'
+                      }`}>
+                        {workspace.sandboxState.changedFiles > 0 ? `${workspace.sandboxState.changedFiles} changed` : 'clean'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => workspace.sandboxId && workspace.fetchSandboxState(workspace.sandboxId)}
+                        disabled={workspace.sandboxStateLoading}
+                        className="inline-flex items-center gap-1 rounded border border-[#27272a] px-1.5 py-0.5 text-[10px] text-[#a1a1aa] hover:text-[#fafafa] hover:border-[#3f3f46] disabled:opacity-50"
+                        title="Refresh sandbox state"
+                      >
+                        {workspace.sandboxStateLoading ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {workspace.sandboxState.changedFiles > 0 && (
+                    <div className="px-3 pb-2 space-y-1.5">
+                      <div className="flex gap-3 text-[11px] text-[#71717a]">
+                        <span>Staged: <span className="text-[#a1a1aa]">{workspace.sandboxState.stagedFiles}</span></span>
+                        <span>Unstaged: <span className="text-[#a1a1aa]">{workspace.sandboxState.unstagedFiles}</span></span>
+                        <span>Untracked: <span className="text-[#a1a1aa]">{workspace.sandboxState.untrackedFiles}</span></span>
+                      </div>
+                      {workspace.sandboxState.preview.length > 0 && (
+                        <div className="rounded border border-[#1f1f23] bg-[#0a0a0c] p-1.5 space-y-0.5">
+                          {workspace.sandboxState.preview.map((line, idx) => (
+                            <div key={`${line}-${idx}`} className="text-[10px] text-[#a1a1aa] font-mono truncate">
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="px-3 pb-2 text-[10px] text-[#52525b]">
+                    {new Date(workspace.sandboxState.fetchedAt).toLocaleTimeString()}
+                    <span className="font-mono ml-1.5">{workspace.sandboxState.sandboxId.slice(0, 12)}...</span>
+                  </div>
+                </div>
+              )}
+
+              {workspace.sandboxError && (
+                <p className="text-xs text-red-400">{workspace.sandboxError}</p>
+              )}
+            </div>
+          )}
+
+          </>)}
+
+          {/* ── AI tab ── */}
+          {settingsTab === 'ai' && (<>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-[#fafafa]">
+                AI Provider
+              </label>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    ai.hasOllamaKey || ai.hasKimiKey || ai.hasMistralKey ? 'bg-emerald-500' : 'bg-[#52525b]'
+                  }`}
+                />
+                <span className="text-xs text-[#a1a1aa]">
+                  {ai.isProviderLocked
+                    ? `${PROVIDER_LABELS[ai.lockedProvider || 'demo']} 🔒`
+                    : (PROVIDER_LABELS[ai.activeProviderLabel] || 'Offline')}
+                </span>
+              </div>
+            </div>
+
+            {/* Provider lock warning */}
+            {ai.isProviderLocked && ai.lockedProvider && (
+              <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                <p className="text-xs text-amber-400">
+                  🔒 {PROVIDER_LABELS[ai.lockedProvider]} locked for this chat
+                </p>
+                <p className="text-xs text-[#71717a] mt-0.5">
+                  Start a new chat to switch providers
+                </p>
+                {ai.lockedModel && (
+                  <p className="text-xs text-[#71717a] mt-0.5">
+                    Model locked for this chat: <span className="font-mono text-[#a1a1aa]">{ai.lockedModel}</span>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Backend picker */}
+            {ai.availableProviders.length >= 2 && (
+              <div className={`space-y-1.5 ${ai.isProviderLocked ? 'opacity-50' : ''}`}>
+                <label className="text-xs font-medium text-[#a1a1aa]">
+                  Active backend
+                  {ai.isProviderLocked && ' (locked)'}
+                </label>
+                <div className="flex gap-2">
+                  {ai.availableProviders.map(([value, label]) => (
+                    <button
+                      key={value}
+                      onClick={() => {
+                        if (ai.isProviderLocked) return;
+                        ai.setPreferredProvider(value as PreferredProvider);
+                        ai.setActiveBackend(value as PreferredProvider);
+                      }}
+                      disabled={ai.isProviderLocked}
+                      className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        (ai.activeBackend ?? ai.activeProviderLabel) === value
+                          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                          : 'border-[#1a1a1a] bg-[#0d0d0d] text-[#71717a] hover:text-[#a1a1aa]'
+                      } ${ai.isProviderLocked ? 'cursor-not-allowed' : ''}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Ollama */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[#a1a1aa]">Ollama</label>
+              {ai.hasOllamaKey ? (
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
+                    <p className="text-sm text-[#a1a1aa] font-mono">Key Saved</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#71717a] shrink-0">Model:</span>
+                    <select
+                      value={ai.ollamaModel}
+                      onChange={(e) => ai.setOllamaModel(e.target.value)}
+                      disabled={ai.ollamaModelOptions.length === 0 || ai.isOllamaModelLocked}
+                      className="flex-1 rounded-md border border-[#1a1a1a] bg-[#0d0d0d] px-2 py-1 text-xs text-[#fafafa] font-mono focus:outline-none focus:border-[#3f3f46] disabled:opacity-50"
+                    >
+                      {ai.ollamaModelOptions.length === 0 ? (
+                        <option value={ai.ollamaModel}>{ai.ollamaModel}</option>
+                      ) : (
+                        ai.ollamaModelOptions.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={ai.refreshOllamaModels}
+                      disabled={ai.ollamaModelsLoading || ai.isOllamaModelLocked}
+                      className="rounded-md border border-[#1a1a1a] bg-[#0d0d0d] p-1.5 text-[#a1a1aa] hover:text-[#fafafa] disabled:opacity-50"
+                      aria-label="Refresh Ollama models"
+                      title="Refresh Ollama models"
+                    >
+                      {ai.ollamaModelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  {ai.ollamaModelsError && (
+                    <p className="text-xs text-amber-400">
+                      {ai.ollamaModelsError}
+                    </p>
+                  )}
+                  {ai.ollamaModelsUpdatedAt && (
+                    <p className="text-xs text-[#52525b]">
+                      Updated {new Date(ai.ollamaModelsUpdatedAt).toLocaleTimeString()}
+                    </p>
+                  )}
+                  {ai.isOllamaModelLocked && ai.lockedModel && (
+                    <p className="text-xs text-amber-400">
+                      Locked to {ai.lockedModel} for this chat. Start a new chat to change model.
+                    </p>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      ai.clearOllamaKey();
+                      if (ai.activeBackend === 'ollama') {
+                        ai.clearPreferredProvider();
+                        ai.setActiveBackend(null);
+                      }
+                    }}
+                    className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                  >
+                    Remove key
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={ai.ollamaKeyInput}
+                    onChange={(e) => ai.setOllamaKeyInput(e.target.value)}
+                    placeholder="Ollama API key"
+                    className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && ai.ollamaKeyInput.trim()) {
+                        ai.setOllamaKey(ai.ollamaKeyInput.trim());
+                        ai.setOllamaKeyInput('');
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (ai.ollamaKeyInput.trim()) {
+                        ai.setOllamaKey(ai.ollamaKeyInput.trim());
+                        ai.setOllamaKeyInput('');
+                      }
+                    }}
+                    disabled={!ai.ollamaKeyInput.trim()}
+                    className="text-[#a1a1aa] hover:text-[#fafafa] w-full justify-start"
+                  >
+                    Save Ollama key
+                  </Button>
+                  <p className="text-xs text-[#52525b]">
+                    Ollama API key (local or cloud).
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Kimi */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[#a1a1aa]">Kimi</label>
+              {ai.hasKimiKey ? (
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
+                    <p className="text-sm text-[#a1a1aa] font-mono">
+                      Key Saved
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      ai.clearKimiKey();
+                      if (ai.activeBackend === 'moonshot') {
+                        ai.clearPreferredProvider();
+                        ai.setActiveBackend(null);
+                      }
+                    }}
+                    className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                  >
+                    Remove key
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={ai.kimiKeyInput}
+                    onChange={(e) => ai.setKimiKeyInput(e.target.value)}
+                    placeholder="sk-kimi-..."
+                    className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && ai.kimiKeyInput.trim()) {
+                        ai.setKimiKey(ai.kimiKeyInput.trim());
+                        ai.setKimiKeyInput('');
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (ai.kimiKeyInput.trim()) {
+                        ai.setKimiKey(ai.kimiKeyInput.trim());
+                        ai.setKimiKeyInput('');
+                      }
+                    }}
+                    disabled={!ai.kimiKeyInput.trim()}
+                    className="text-[#a1a1aa] hover:text-[#fafafa] w-full justify-start"
+                  >
+                    Save Kimi key
+                  </Button>
+                  <p className="text-xs text-[#52525b]">
+                    Kimi For Coding API key (starts with sk-kimi-).
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Mistral */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[#a1a1aa]">Mistral</label>
+              {ai.hasMistralKey ? (
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
+                    <p className="text-sm text-[#a1a1aa] font-mono">Key Saved</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#71717a] shrink-0">Model:</span>
+                    <select
+                      value={ai.mistralModel}
+                      onChange={(e) => ai.setMistralModel(e.target.value)}
+                      disabled={ai.mistralModelOptions.length === 0 || ai.isMistralModelLocked}
+                      className="flex-1 rounded-md border border-[#1a1a1a] bg-[#0d0d0d] px-2 py-1 text-xs text-[#fafafa] font-mono focus:outline-none focus:border-[#3f3f46] disabled:opacity-50"
+                    >
+                      {ai.mistralModelOptions.length === 0 ? (
+                        <option value={ai.mistralModel}>{ai.mistralModel}</option>
+                      ) : (
+                        ai.mistralModelOptions.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={ai.refreshMistralModels}
+                      disabled={ai.mistralModelsLoading || ai.isMistralModelLocked}
+                      className="rounded-md border border-[#1a1a1a] bg-[#0d0d0d] p-1.5 text-[#a1a1aa] hover:text-[#fafafa] disabled:opacity-50"
+                      aria-label="Refresh Mistral models"
+                      title="Refresh Mistral models"
+                    >
+                      {ai.mistralModelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  {ai.mistralModelsError && (
+                    <p className="text-xs text-amber-400">
+                      {ai.mistralModelsError}
+                    </p>
+                  )}
+                  {ai.mistralModelsUpdatedAt && (
+                    <p className="text-xs text-[#52525b]">
+                      Updated {new Date(ai.mistralModelsUpdatedAt).toLocaleTimeString()}
+                    </p>
+                  )}
+                  {ai.isMistralModelLocked && ai.lockedModel && (
+                    <p className="text-xs text-amber-400">
+                      Locked to {ai.lockedModel} for this chat. Start a new chat to change model.
+                    </p>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      ai.clearMistralKey();
+                      if (ai.activeBackend === 'mistral') {
+                        ai.clearPreferredProvider();
+                        ai.setActiveBackend(null);
+                      }
+                    }}
+                    className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                  >
+                    Remove key
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={ai.mistralKeyInput}
+                    onChange={(e) => ai.setMistralKeyInput(e.target.value)}
+                    placeholder="Mistral API key"
+                    className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && ai.mistralKeyInput.trim()) {
+                        ai.setMistralKey(ai.mistralKeyInput.trim());
+                        ai.setMistralKeyInput('');
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (ai.mistralKeyInput.trim()) {
+                        ai.setMistralKey(ai.mistralKeyInput.trim());
+                        ai.setMistralKeyInput('');
+                      }
+                    }}
+                    disabled={!ai.mistralKeyInput.trim()}
+                    className="text-[#a1a1aa] hover:text-[#fafafa] w-full justify-start"
+                  >
+                    Save Mistral key
+                  </Button>
+                  <p className="text-xs text-[#52525b]">
+                    Mistral API key from console.mistral.ai.
+                  </p>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* Web Search (Tavily) */}
+          <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-[#fafafa]">
+                Web Search
+              </label>
+              <span className="text-xs text-[#52525b]">Optional</span>
+            </div>
+            <div className="space-y-2">
+              {ai.hasTavilyKey ? (
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2">
+                    <p className="text-sm text-[#a1a1aa] font-mono">Tavily Key Saved</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => ai.clearTavilyKey()}
+                    className="text-[#a1a1aa] hover:text-red-400 w-full justify-start"
+                  >
+                    Remove key
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={ai.tavilyKeyInput}
+                    onChange={(e) => ai.setTavilyKeyInput(e.target.value)}
+                    placeholder="tvly-..."
+                    className="w-full rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] px-3 py-2 text-sm text-[#fafafa] placeholder:text-[#52525b] focus:outline-none focus:border-[#3f3f46]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && ai.tavilyKeyInput.trim()) {
+                        ai.setTavilyKey(ai.tavilyKeyInput.trim());
+                        ai.setTavilyKeyInput('');
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (ai.tavilyKeyInput.trim()) {
+                        ai.setTavilyKey(ai.tavilyKeyInput.trim());
+                        ai.setTavilyKeyInput('');
+                      }
+                    }}
+                    disabled={!ai.tavilyKeyInput.trim()}
+                    className="text-[#a1a1aa] hover:text-[#fafafa] w-full justify-start"
+                  >
+                    Save Tavily key
+                  </Button>
+                  <p className="text-xs text-[#52525b]">
+                    Not required — web search works without this. Add a Tavily API key for higher-quality, LLM-optimized results. Free tier: 1,000 searches/month.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Danger Zone */}
+          <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+            <label className="text-sm font-medium text-[#fafafa]">
+              Data
+            </label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                data.deleteAllChats();
+                onOpenChange(false);
+              }}
+              className="text-[#a1a1aa] hover:text-red-400 w-full justify-start gap-2"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete all chats{data.activeRepo ? ` for ${data.activeRepo.name}` : ''}
+            </Button>
+          </div>
+          </>)}
+        </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}

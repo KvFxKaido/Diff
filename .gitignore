@@ -37,3 +37,6 @@ __pycache__/
 # development
 android/
 android-wrapper/
+
+# Personal
+personal/
