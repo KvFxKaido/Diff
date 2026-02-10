@@ -33,6 +33,7 @@ Push is a personal chat interface backed by role-based AI agents (Orchestrator, 
 *   **Tool Protocol:** Prompt-engineered JSON tool blocks for GitHub and Sandbox interactions.
 *   **Sandbox:** Persistent Linux environment (via Modal) for cloning repos, running tests, and editing files.
 *   **Sandbox Mode:** Ephemeral workspace (no GitHub repo). Entry via onboarding or repo picker. GitHub tools blocked; 30-min lifetime with expiry warning. Download as tar.gz.
+*   **Web Search Tools:** Mid-conversation web search via Tavily (premium), Ollama native search, or DuckDuckGo fallback. Mistral handles search natively via Agents API.
 *   **Browser Tools (Optional):** Sandbox-backed webpage screenshot + text extraction via Browserbase.
 *   **User Identity:** Display name, bio, and GitHub login set in Settings. Stored in localStorage via `useUserProfile` hook. Injected into Orchestrator and Coder system prompts via `buildUserIdentityBlock()`.
 *   **Scratchpad:** Shared persistent notepad for user/AI collaboration.
@@ -45,17 +46,24 @@ Push/
 ├── app/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── chat/      # Chat UI (Container, Input, Bubbles, SandboxExpiryBanner)
-│   │   │   ├── cards/     # Inline UI Cards (PR, Diff, Sandbox Output, SandboxDownloadCard)
+│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner
+│   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, FileSearchCard, CommitReviewCard, TestResultsCard, EditorCard, BrowserScreenshotCard, BrowserExtractCard, and more
+│   │   │   ├── filebrowser/ # FileActionsSheet, CommitPushSheet, FileEditor, UploadButton
 │   │   │   └── ui/        # shadcn/ui library
-│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useUserProfile)
+│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useGitHubAppAuth, useUserProfile, useFileBrowser, useCodeMirror, useCommitPush, useTavilyConfig, useUsageTracking, etc.)
 │   │   ├── lib/           # Core Logic
 │   │   │   ├── orchestrator.ts    # Agent coordination & streaming
 │   │   │   ├── coder-agent.ts     # Coder sub-agent loop
 │   │   │   ├── auditor-agent.ts   # Auditor safety gate
 │   │   │   ├── github-tools.ts    # GitHub API tools
-│   │   │   └── sandbox-tools.ts   # Sandbox interaction tools
-│   │   ├── sections/      # Main application screens
+│   │   │   ├── sandbox-tools.ts   # Sandbox interaction tools
+│   │   │   ├── web-search-tools.ts # Web search (Tavily, Ollama native, DuckDuckGo)
+│   │   │   ├── model-catalog.ts   # Ollama/Mistral model lists
+│   │   │   ├── prompts.ts         # Prompt building utilities
+│   │   │   ├── feature-flags.ts   # Feature flag system
+│   │   │   ├── snapshot-manager.ts # Workspace snapshot management
+│   │   │   └── ...                # file-processing, file-utils, browser-metrics, codemirror-*, utils
+│   │   ├── sections/      # OnboardingScreen, RepoPicker, FileBrowser, HomeScreen
 │   │   ├── types/         # Shared TypeScript definitions
 │   │   ├── App.tsx        # Main entry & routing
 │   │   └── main.tsx       # React root
@@ -100,6 +108,8 @@ Push/
 
 ### Environment
 Environment variables are in `app/.env` (local dev) and Cloudflare Worker secrets (production). API keys can also be set via the Settings UI.
+
+Key variables: `VITE_MOONSHOT_API_KEY` (Kimi), `VITE_MISTRAL_API_KEY` (Mistral), `VITE_OLLAMA_API_KEY` (Ollama Cloud), `VITE_TAVILY_API_KEY` (web search), `VITE_GITHUB_TOKEN` (PAT), `VITE_GITHUB_CLIENT_ID` / `VITE_GITHUB_APP_REDIRECT_URI` / `VITE_GITHUB_OAUTH_PROXY` / `VITE_GITHUB_REDIRECT_URI` (GitHub App OAuth), `VITE_BROWSER_TOOL_ENABLED` (browser tools toggle).
 
 ## Coding Conventions
 *   **TypeScript:** Strict mode enabled. Explicit return types required on exported functions.
