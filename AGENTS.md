@@ -58,6 +58,10 @@ The Orchestrator can delegate complex coding tasks to the Coder sub-agent via `d
 
 Prompt-gated by `VITE_BROWSER_TOOL_ENABLED=true`. Routed through Worker endpoints.
 
+### Web Search Tools
+
+The Orchestrator can search the web mid-conversation via `web-search-tools.ts`. Three backends: **Tavily** (premium, LLM-optimized results via `VITE_TAVILY_API_KEY`), **Ollama native search** (POST `/api/web_search`), and **DuckDuckGo** (free fallback). Mistral handles search natively via its Agents API.
+
 ### User Identity
 
 Users set a display name, bio, and GitHub login in Settings. Stored in localStorage via `useUserProfile` hook. Injected into both Orchestrator and Coder system prompts via `buildUserIdentityBlock()`. Bio is escaped to prevent prompt injection.
@@ -102,13 +106,13 @@ Push/
 │   ├── src/
 │   │   ├── App.tsx        # Root component, screen state machine
 │   │   ├── components/
-│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, ScratchpadDrawer, SandboxExpiryBanner
-│   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, SandboxDownloadCard, etc.
-│   │   │   ├── filebrowser/  # File browser components
+│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner
+│   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, FileSearchCard, CommitReviewCard, TestResultsCard, EditorCard, BrowserScreenshotCard, BrowserExtractCard, and more
+│   │   │   ├── filebrowser/  # FileActionsSheet, CommitPushSheet, FileEditor, UploadButton
 │   │   │   └── ui/        # shadcn/ui component library
-│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, etc.)
-│   │   ├── lib/           # Core logic and agent modules
-│   │   ├── sections/      # OnboardingScreen, RepoPicker, FileBrowser
+│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useTavilyConfig, useUsageTracking, etc.)
+│   │   ├── lib/           # Core logic, agent modules, web search, model catalog, prompts, feature flags, snapshot manager
+│   │   ├── sections/      # OnboardingScreen, RepoPicker, FileBrowser, HomeScreen
 │   │   ├── types/index.ts # All shared types
 │   │   └── main.tsx       # App entry point
 │   ├── package.json
@@ -134,6 +138,18 @@ Push/
 | `lib/auditor-agent.ts` | Auditor review + verdict (fail-safe, uses active backend) |
 | `lib/workspace-context.ts` | Active repo context builder |
 | `lib/providers.ts` | AI provider config and role model mapping |
+| `lib/web-search-tools.ts` | Web search tools (Tavily, Ollama native, DuckDuckGo fallback) |
+| `lib/model-catalog.ts` | Ollama/Mistral model lists and selection |
+| `lib/prompts.ts` | Prompt building utilities |
+| `lib/feature-flags.ts` | Feature flag system |
+| `lib/snapshot-manager.ts` | Workspace snapshot management and recovery |
+| `lib/file-processing.ts` | File content processing and transformation |
+| `lib/file-utils.ts` | File utility helpers |
+| `lib/sandbox-start-mode.ts` | Sandbox startup mode configuration |
+| `lib/browser-metrics.ts` | Browser performance metrics tracking |
+| `lib/codemirror-langs.ts` | CodeMirror language support configuration |
+| `lib/codemirror-theme.ts` | CodeMirror editor theme |
+| `lib/utils.ts` | General utility functions |
 
 ### Hooks (hooks/)
 
@@ -146,7 +162,17 @@ Push/
 | `hooks/useRepos.ts` | Repo list fetching, activity detection |
 | `hooks/useActiveRepo.ts` | Active repo selection + persistence |
 | `hooks/useUserProfile.ts` | User identity (name, bio, GitHub login) + standalone getter |
+| `hooks/useGitHubAppAuth.ts` | GitHub App OAuth flow and token refresh |
+| `hooks/useGitHub.ts` | GitHub API client hook |
 | `hooks/useFileBrowser.ts` | File browser state and navigation |
+| `hooks/useCodeMirror.ts` | CodeMirror editor integration |
+| `hooks/useCommitPush.ts` | Commit and push workflow state |
+| `hooks/useOllamaConfig.ts` | Ollama backend configuration and model selection |
+| `hooks/useMoonshotKey.ts` | Kimi/Moonshot API key management |
+| `hooks/useMistralConfig.ts` | Mistral backend configuration and model selection |
+| `hooks/useTavilyConfig.ts` | Tavily web search API key management |
+| `hooks/useUsageTracking.ts` | Usage analytics tracking |
+| `hooks/use-mobile.ts` | Mobile viewport detection |
 
 ## Coding Conventions
 
