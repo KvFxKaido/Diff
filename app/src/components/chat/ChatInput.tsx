@@ -1,36 +1,84 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowUp, Paperclip, Square } from 'lucide-react';
+import { ArrowUp, ChevronsUpDown, Loader2, Lock, Paperclip, RefreshCw, Square } from 'lucide-react';
 import { AttachmentPreview } from './AttachmentPreview';
-import { WorkspacePanelButton } from './WorkspacePanelButton';
 import { ContextMeter } from './ContextMeter';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { processFile, getTotalAttachmentSize } from '@/lib/file-processing';
 import type { StagedAttachment } from '@/lib/file-processing';
-import type { AttachmentData } from '@/types';
+import type { AIProviderType, AttachmentData } from '@/types';
+import type { PreferredProvider } from '@/lib/providers';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: AttachmentData[]) => void;
   onStop?: () => void;
   isStreaming?: boolean;
   repoName?: string;
-  onWorkspacePanelToggle?: () => void;
-  scratchpadHasContent?: boolean;
-  agentActive?: boolean;
   contextUsage?: { used: number; max: number; percent: number };
+  providerControls?: {
+    activeProvider: AIProviderType;
+    activeBackend: PreferredProvider | null;
+    availableProviders: readonly (readonly [PreferredProvider, string, boolean])[];
+    isProviderLocked: boolean;
+    lockedProvider: AIProviderType | null;
+    lockedModel: string | null;
+    onSelectBackend: (provider: PreferredProvider) => void;
+    ollamaModel: string;
+    ollamaModelOptions: string[];
+    ollamaModelsLoading: boolean;
+    ollamaModelsError: string | null;
+    ollamaModelsUpdatedAt: number | null;
+    isOllamaModelLocked: boolean;
+    refreshOllamaModels: () => void;
+    onSelectOllamaModel: (model: string) => void;
+    mistralModel: string;
+    mistralModelOptions: string[];
+    mistralModelsLoading: boolean;
+    mistralModelsError: string | null;
+    mistralModelsUpdatedAt: number | null;
+    isMistralModelLocked: boolean;
+    refreshMistralModels: () => void;
+    onSelectMistralModel: (model: string) => void;
+  };
 }
 
 const ACCEPTED_FILES = 'image/*,.js,.ts,.tsx,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.md,.txt,.json,.yaml,.yml,.html,.css,.sql,.sh,.rb,.php,.swift,.kt,.scala,.vue,.svelte,.astro';
 const MAX_PAYLOAD = 400 * 1024; // 400KB total
+
+const PROVIDER_LABELS: Record<AIProviderType, string> = {
+  moonshot: 'Kimi',
+  ollama: 'Ollama',
+  mistral: 'Mistral',
+  demo: 'Demo',
+};
+
+const PROVIDER_ICONS: Record<AIProviderType, string> = {
+  moonshot: '🌙',
+  ollama: '🦙',
+  mistral: '🌪️',
+  demo: '⚡',
+};
+
+function formatTimeAgo(timestamp: number | null): string | null {
+  if (!timestamp) return null;
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 export function ChatInput({
   onSend,
   onStop,
   isStreaming,
   repoName,
-  onWorkspacePanelToggle,
-  scratchpadHasContent,
-  agentActive,
   contextUsage,
+  providerControls,
 }: ChatInputProps) {
   const [value, setValue] = useState('');
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
@@ -161,6 +209,56 @@ export function ChatInput({
       ? `${readyAttachments.length} attachment${readyAttachments.length > 1 ? 's' : ''} ready`
       : null;
 
+  const selectedProvider: AIProviderType = (() => {
+    if (!providerControls) return 'demo';
+    if (providerControls.isProviderLocked && providerControls.lockedProvider) return providerControls.lockedProvider;
+    if (providerControls.activeBackend) return providerControls.activeBackend;
+    return providerControls.activeProvider;
+  })();
+
+  const isDisplayedProviderLocked = Boolean(
+    providerControls?.isProviderLocked &&
+    providerControls.lockedProvider &&
+    providerControls.lockedProvider === selectedProvider,
+  );
+
+  const selectedModel = (() => {
+    if (!providerControls) return '';
+    if (isDisplayedProviderLocked && providerControls.lockedModel) return providerControls.lockedModel;
+    if (selectedProvider === 'ollama') return providerControls.ollamaModel;
+    if (selectedProvider === 'mistral') return providerControls.mistralModel;
+    if (selectedProvider === 'moonshot') return 'k2.5';
+    return 'demo';
+  })();
+
+  const canChangeProvider = Boolean(providerControls);
+  const canChangeModel = Boolean(providerControls);
+  const backendValues = providerControls?.availableProviders.map(([value]) => value) ?? [];
+  const selectedBackendValue = backendValues.includes(selectedProvider as PreferredProvider)
+    ? (selectedProvider as PreferredProvider)
+    : (backendValues[0] ?? '');
+
+  const selectedModelLoading = (() => {
+    if (!providerControls) return false;
+    if (selectedProvider === 'ollama') return providerControls.ollamaModelsLoading;
+    if (selectedProvider === 'mistral') return providerControls.mistralModelsLoading;
+    return false;
+  })();
+
+  const selectedModelUpdatedAgo = (() => {
+    if (!providerControls) return null;
+    if (selectedProvider === 'ollama') return formatTimeAgo(providerControls.ollamaModelsUpdatedAt);
+    if (selectedProvider === 'mistral') return formatTimeAgo(providerControls.mistralModelsUpdatedAt);
+    return null;
+  })();
+
+  const canRefreshSelectedModelList = selectedProvider === 'ollama' || selectedProvider === 'mistral';
+  const refreshSelectedModelList = () => {
+    if (!providerControls) return;
+    if (selectedProvider === 'ollama') providerControls.refreshOllamaModels();
+    if (selectedProvider === 'mistral') providerControls.refreshMistralModels();
+  };
+
   return (
     <div className="safe-area-bottom sticky bottom-0 z-10 px-3 pb-3">
       <div className="relative overflow-hidden rounded-[24px] border border-[#171c25] bg-[linear-gradient(180deg,#0a0d13_0%,#04060a_100%)] shadow-[0_20px_52px_rgba(0,0,0,0.68)] backdrop-blur-xl">
@@ -192,13 +290,6 @@ export function ChatInput({
 
         <div className="flex items-center gap-2 px-2 pb-2.5 pt-1.5">
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* Workspace panel toggle */}
-            <WorkspacePanelButton
-              onClick={onWorkspacePanelToggle ?? (() => {})}
-              scratchpadHasContent={scratchpadHasContent ?? false}
-              agentActive={agentActive ?? false}
-            />
-
             {/* File attachment button */}
             <button
               type="button"
@@ -214,6 +305,170 @@ export function ChatInput({
             >
               <Paperclip className="h-4 w-4" />
             </button>
+
+            {providerControls && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-9 max-w-[170px] items-center gap-1.5 rounded-xl border border-push-edge bg-[#080b10]/95 px-2.5 text-[11px] text-[#a9b3c5] transition-colors hover:border-push-edge-hover hover:bg-[#0d1119] hover:text-[#e2e8f0]"
+                    title={
+                      isDisplayedProviderLocked
+                        ? `${PROVIDER_LABELS[selectedProvider]} locked for this chat`
+                        : 'Backend and model'
+                    }
+                  >
+                    <span className="shrink-0">{PROVIDER_ICONS[selectedProvider]}</span>
+                    <span className="truncate">
+                      {PROVIDER_LABELS[selectedProvider]} · {selectedModel}
+                    </span>
+                    {isDisplayedProviderLocked ? (
+                      <Lock className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <ChevronsUpDown className="h-3 w-3 shrink-0" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="start"
+                  sideOffset={10}
+                  className="w-[250px] rounded-xl border border-[#1f2531] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] p-2 text-[#d7deeb] shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
+                >
+                  <div className="space-y-2.5 px-1 py-1">
+                    <div className="rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-1.5">
+                      <p className="text-[10px] text-[#8e99ad]">
+                        {isDisplayedProviderLocked ? 'Current chat: locked' : 'New chat defaults'}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="px-1 text-[10px] font-medium uppercase tracking-wide text-[#7c879b]">Backend</p>
+                      {providerControls.availableProviders.length === 0 ? (
+                        <div className="rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-2 text-[11px] text-[#7c879b]">
+                          No API keys configured yet.
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedBackendValue}
+                          disabled={!canChangeProvider}
+                          onChange={(e) => providerControls.onSelectBackend(e.target.value as PreferredProvider)}
+                          className="h-8 w-full rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 text-xs text-[#d7deeb] outline-none focus:border-[#3d5579] disabled:opacity-60"
+                        >
+                          {providerControls.availableProviders.map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {PROVIDER_ICONS[value]} {label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between px-1">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-[#7c879b]">Model</p>
+                        {canRefreshSelectedModelList && (
+                          <button
+                            type="button"
+                            onClick={refreshSelectedModelList}
+                            disabled={selectedModelLoading}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#2a3447] bg-[#070a10] text-[#8e99ad] transition-colors hover:text-[#d7deeb] disabled:opacity-50"
+                            aria-label="Refresh models"
+                            title="Refresh models"
+                          >
+                            {selectedModelLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          </button>
+                        )}
+                      </div>
+
+                      {selectedProvider === 'moonshot' && (
+                        <div className="rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-2 text-[11px] text-[#9eabbe]">
+                          k2.5 (fixed)
+                        </div>
+                      )}
+
+                      {selectedProvider === 'demo' && (
+                        <div className="rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-2 text-[11px] text-[#9eabbe]">
+                          Demo mode (no model selection)
+                        </div>
+                      )}
+
+                      {selectedProvider === 'ollama' && (
+                        <>
+                          <select
+                            value={providerControls.ollamaModel}
+                            disabled={!canChangeModel || providerControls.ollamaModelsLoading || providerControls.ollamaModelOptions.length === 0}
+                            onChange={(e) => providerControls.onSelectOllamaModel(e.target.value)}
+                            className="h-8 w-full rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 text-xs text-[#d7deeb] outline-none focus:border-[#3d5579] disabled:opacity-60"
+                          >
+                            {(providerControls.ollamaModelOptions.length > 0
+                              ? providerControls.ollamaModelOptions
+                              : [providerControls.ollamaModel]
+                            ).map((model) => (
+                              <option key={model || '__default'} value={model}>
+                                {model || '(default)'}
+                              </option>
+                            ))}
+                          </select>
+                          {providerControls.ollamaModelsLoading && (
+                            <p className="px-1 text-[10px] text-[#7c879b]">Loading Ollama models...</p>
+                          )}
+                          {!providerControls.ollamaModelsLoading && providerControls.ollamaModelOptions.length === 0 && !providerControls.ollamaModelsError && (
+                            <p className="px-1 text-[10px] text-[#7c879b]">No models returned. Try refresh.</p>
+                          )}
+                          {providerControls.ollamaModelsError && (
+                            <p className="px-1 text-[10px] text-amber-400">{providerControls.ollamaModelsError}</p>
+                          )}
+                          {selectedModelUpdatedAgo && (
+                            <p className="px-1 text-[10px] text-[#7c879b]">Updated {selectedModelUpdatedAgo}</p>
+                          )}
+                          {providerControls.isOllamaModelLocked && (
+                            <p className="px-1 text-[10px] text-amber-400">Current chat locked; choosing a model starts a new chat.</p>
+                          )}
+                        </>
+                      )}
+
+                      {selectedProvider === 'mistral' && (
+                        <>
+                          <select
+                            value={providerControls.mistralModel}
+                            disabled={!canChangeModel || providerControls.mistralModelsLoading || providerControls.mistralModelOptions.length === 0}
+                            onChange={(e) => providerControls.onSelectMistralModel(e.target.value)}
+                            className="h-8 w-full rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 text-xs text-[#d7deeb] outline-none focus:border-[#3d5579] disabled:opacity-60"
+                          >
+                            {(providerControls.mistralModelOptions.length > 0
+                              ? providerControls.mistralModelOptions
+                              : [providerControls.mistralModel]
+                            ).map((model) => (
+                              <option key={model || '__default'} value={model}>
+                                {model || '(default)'}
+                              </option>
+                            ))}
+                          </select>
+                          {providerControls.mistralModelsLoading && (
+                            <p className="px-1 text-[10px] text-[#7c879b]">Loading Mistral models...</p>
+                          )}
+                          {!providerControls.mistralModelsLoading && providerControls.mistralModelOptions.length === 0 && !providerControls.mistralModelsError && (
+                            <p className="px-1 text-[10px] text-[#7c879b]">No models returned. Try refresh.</p>
+                          )}
+                          {providerControls.mistralModelsError && (
+                            <p className="px-1 text-[10px] text-amber-400">{providerControls.mistralModelsError}</p>
+                          )}
+                          {selectedModelUpdatedAgo && (
+                            <p className="px-1 text-[10px] text-[#7c879b]">Updated {selectedModelUpdatedAgo}</p>
+                          )}
+                          {providerControls.isMistralModelLocked && (
+                            <p className="px-1 text-[10px] text-amber-400">Current chat locked; choosing a model starts a new chat.</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {isDisplayedProviderLocked && (
+                      <p className="px-1 text-[10px] text-amber-400">Changing backend/model here will start a new chat.</p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
 
           <input

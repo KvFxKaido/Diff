@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Plus, Trash2, MessageSquare, Lock, GitPullRequest, Box, FolderOpen } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, MessageSquare, Lock, GitPullRequest, Box, House } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -108,7 +108,7 @@ export function RepoAndChatSelector({
               );
             })}
 
-            {/* --- Browse repos --- */}
+            {/* --- Home --- */}
             {onBrowseRepos && (
               <DropdownMenuItem
                 onSelect={() => {
@@ -117,8 +117,8 @@ export function RepoAndChatSelector({
                 }}
                 className="mx-1 mt-1 flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-push-link hover:bg-[#0d1119] hover:text-[#86ccff]"
               >
-                <FolderOpen className="h-4 w-4" />
-                <span className="text-sm font-medium">Browse repos</span>
+                <House className="h-4 w-4" />
+                <span className="text-sm font-medium">Home</span>
               </DropdownMenuItem>
             )}
 

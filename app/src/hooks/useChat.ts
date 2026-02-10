@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { ChatMessage, AgentStatus, Conversation, ToolExecutionResult, CardAction, CommitReviewCardData, ChatCard, AttachmentData, AIProviderType, SandboxStateCardData, ActiveRepo } from '@/types';
-import { streamChat, getActiveProvider, estimateContextTokens, type ActiveProvider } from '@/lib/orchestrator';
+import { streamChat, getActiveProvider, estimateContextTokens, getContextBudget, type ActiveProvider } from '@/lib/orchestrator';
 import { detectAnyToolCall, executeAnyToolCall, detectMalformedToolAttempt } from '@/lib/tool-dispatch';
 import type { AnyToolCall } from '@/lib/tool-dispatch';
 import { runCoderAgent } from '@/lib/coder-agent';
@@ -297,17 +297,19 @@ export function useChat(
 
   // Context usage — estimate tokens for the meter
   const contextUsage = useMemo(() => {
+    const contextProvider = (conversationProvider as ActiveProvider | undefined) || getActiveProvider();
+    const contextModel = conversationModel || getCurrentModelForProvider(contextProvider);
+    const budget = getContextBudget(contextProvider, contextModel);
     const used = estimateContextTokens(messages);
-    const max = 100_000; // matches MAX_CONTEXT_TOKENS in orchestrator
+    const max = budget.maxTokens;
     return { used, max, percent: Math.min(100, Math.round((used / max) * 100)) };
-  }, [messages]);
+  }, [messages, conversationProvider, conversationModel]);
 
   // Check if this conversation has user messages (i.e., provider is locked)
-  // Provider is locked if: we have a stored provider, OR there are user messages (legacy chats)
-  const hasUserMessages = messages.some(m => m.role === 'user');
-  const isProviderLocked = Boolean(conversationProvider) || hasUserMessages;
-  const isModelLocked = Boolean(conversationModel) || hasUserMessages;
-  // The locked provider: use stored one, or null for legacy chats (unknown)
+  // Lock status is conversation-scoped and persisted on first user message.
+  const isProviderLocked = Boolean(conversationProvider);
+  const isModelLocked = Boolean(conversationModel || conversationProvider);
+  // The locked provider/model for this conversation (if any).
   const lockedProvider: AIProviderType | null = conversationProvider || null;
   const lockedModel: string | null = conversationModel || null;
 
@@ -412,7 +414,7 @@ export function useChat(
       messages: [],
       createdAt: Date.now(),
       lastMessageAt: Date.now(),
-      repoFullName: repoRef.current || undefined,
+      repoFullName: activeRepoFullName || undefined,
     };
     setConversations((prev) => {
       const updated = { ...prev, [id]: newConv };
@@ -422,7 +424,7 @@ export function useChat(
     setActiveChatId(id);
     saveActiveChatId(id);
     return id;
-  }, []);
+  }, [activeRepoFullName]);
 
   const switchChat = useCallback(
     (id: string) => {
@@ -435,6 +437,25 @@ export function useChat(
     },
     [activeChatId, isStreaming, abortStream],
   );
+
+  const renameChat = useCallback((id: string, nextTitle: string) => {
+    const trimmed = nextTitle.trim();
+    if (!trimmed) return;
+
+    setConversations((prev) => {
+      const existing = prev[id];
+      if (!existing || existing.title === trimmed) return prev;
+      const updated = {
+        ...prev,
+        [id]: {
+          ...existing,
+          title: trimmed,
+        },
+      };
+      saveConversations(updated);
+      return updated;
+    });
+  }, []);
 
   const deleteChat = useCallback(
     (id: string) => {
@@ -1304,6 +1325,7 @@ export function useChat(
     activeChatId,
     sortedChatIds,
     switchChat,
+    renameChat,
     createNewChat,
     deleteChat,
     deleteAllChats,

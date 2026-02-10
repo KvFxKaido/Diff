@@ -130,8 +130,61 @@ const CONTEXT_MODE_STORAGE_KEY = 'push_context_mode';
 export type ContextMode = 'graceful' | 'none';
 
 // Rolling window config — token-based context management
-const MAX_CONTEXT_TOKENS = 100_000; // Hard cap
-const TARGET_CONTEXT_TOKENS = 88_000; // Soft target leaves room for system prompt + response
+const DEFAULT_CONTEXT_MAX_TOKENS = 100_000; // Hard cap
+const DEFAULT_CONTEXT_TARGET_TOKENS = 88_000; // Soft target leaves room for system prompt + response
+const KIMI_CONTEXT_MAX_TOKENS = 180_000;
+const KIMI_CONTEXT_TARGET_TOKENS = 156_000;
+const GEMINI3_FLASH_CONTEXT_MAX_TOKENS = 128_000;
+const GEMINI3_FLASH_CONTEXT_TARGET_TOKENS = 112_000;
+
+export interface ContextBudget {
+  maxTokens: number;
+  targetTokens: number;
+}
+
+const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
+  maxTokens: DEFAULT_CONTEXT_MAX_TOKENS,
+  targetTokens: DEFAULT_CONTEXT_TARGET_TOKENS,
+};
+
+const KIMI_CONTEXT_BUDGET: ContextBudget = {
+  maxTokens: KIMI_CONTEXT_MAX_TOKENS,
+  targetTokens: KIMI_CONTEXT_TARGET_TOKENS,
+};
+
+const GEMINI3_FLASH_CONTEXT_BUDGET: ContextBudget = {
+  maxTokens: GEMINI3_FLASH_CONTEXT_MAX_TOKENS,
+  targetTokens: GEMINI3_FLASH_CONTEXT_TARGET_TOKENS,
+};
+
+function normalizeModelName(model?: string): string {
+  return (model || '').trim().toLowerCase();
+}
+
+export function getContextBudget(
+  provider?: 'moonshot' | 'ollama' | 'mistral' | 'demo',
+  model?: string,
+): ContextBudget {
+  const normalizedModel = normalizeModelName(model);
+
+  if (
+    provider === 'moonshot' ||
+    normalizedModel === 'k2p5' ||
+    normalizedModel === 'k2.5' ||
+    normalizedModel.includes('kimi')
+  ) {
+    return KIMI_CONTEXT_BUDGET;
+  }
+
+  if (
+    provider === 'ollama' &&
+    (normalizedModel === 'gemini-3-flash-preview' || normalizedModel.includes('gemini-3-flash'))
+  ) {
+    return GEMINI3_FLASH_CONTEXT_BUDGET;
+  }
+
+  return DEFAULT_CONTEXT_BUDGET;
+}
 
 export function getContextMode(): ContextMode {
   try {
@@ -270,7 +323,7 @@ function buildContextDigest(removed: ChatMessage[]): string {
  * 3. Summarize old tool results (biggest token consumers)
  * 4. If still over budget, start dropping oldest summarized pairs
  */
-function manageContext(messages: ChatMessage[]): ChatMessage[] {
+function manageContext(messages: ChatMessage[], budget: ContextBudget = DEFAULT_CONTEXT_BUDGET): ChatMessage[] {
   if (getContextMode() === 'none') {
     return messages;
   }
@@ -278,7 +331,7 @@ function manageContext(messages: ChatMessage[]): ChatMessage[] {
   const totalTokens = estimateContextTokens(messages);
 
   // Under target — keep everything
-  if (totalTokens <= TARGET_CONTEXT_TOKENS) {
+  if (totalTokens <= budget.targetTokens) {
     return messages;
   }
 
@@ -290,7 +343,7 @@ function manageContext(messages: ChatMessage[]): ChatMessage[] {
   const recentBoundary = Math.max(0, result.length - 14);
   let currentTokens = totalTokens;
 
-  for (let i = 0; i < recentBoundary && currentTokens > TARGET_CONTEXT_TOKENS; i++) {
+  for (let i = 0; i < recentBoundary && currentTokens > budget.targetTokens; i++) {
     const msg = result[i];
     const before = estimateMessageTokens(msg);
     const summarized = msg.isToolResult ? summarizeToolResult(msg) : summarizeVerboseMessage(msg);
@@ -299,7 +352,7 @@ function manageContext(messages: ChatMessage[]): ChatMessage[] {
     currentTokens -= (before - after);
   }
 
-  if (currentTokens <= TARGET_CONTEXT_TOKENS) {
+  if (currentTokens <= budget.targetTokens) {
     console.log(`[Push] Context managed via summarization: ${totalTokens} → ${currentTokens} tokens`);
     return result;
   }
@@ -313,7 +366,7 @@ function manageContext(messages: ChatMessage[]): ChatMessage[] {
   const toRemove = new Set<number>();
   const removed: ChatMessage[] = [];
 
-  for (let i = 0; i < result.length && currentTokens > TARGET_CONTEXT_TOKENS; i++) {
+  for (let i = 0; i < result.length && currentTokens > budget.targetTokens; i++) {
     if (protectedIdx.has(i) || toRemove.has(i)) continue;
 
     // Keep tool call/result paired for coherence.
@@ -367,10 +420,10 @@ function manageContext(messages: ChatMessage[]): ChatMessage[] {
   }
   if (!digestInserted) kept.unshift(digestMessage);
 
-  if (estimateContextTokens(kept) > MAX_CONTEXT_TOKENS) {
+  if (estimateContextTokens(kept) > budget.maxTokens) {
     // Last resort hard trim from oldest non-protected while keeping digest and recent tail.
     const hardResult = [...kept];
-    while (estimateContextTokens(hardResult) > MAX_CONTEXT_TOKENS && hardResult.length > 16) {
+    while (estimateContextTokens(hardResult) > budget.maxTokens && hardResult.length > 16) {
       hardResult.splice(1, 1);
     }
     console.log(`[Push] Context managed (hard fallback): ${totalTokens} → ${estimateContextTokens(hardResult)} tokens`);
@@ -474,6 +527,7 @@ function toLLMMessages(
   systemPromptOverride?: string,
   scratchpadContent?: string,
   providerType?: 'moonshot' | 'ollama' | 'mistral',
+  providerModel?: string,
 ): LLMMessage[] {
   // Build system prompt: base + user identity + workspace context + tool protocol + optional sandbox tools + scratchpad
   let systemContent = systemPromptOverride || ORCHESTRATOR_SYSTEM_PROMPT;
@@ -517,7 +571,8 @@ function toLLMMessages(
   ];
 
   // Smart context management — summarize old messages instead of dropping
-  const windowedMessages = manageContext(messages);
+  const contextBudget = getContextBudget(providerType, providerModel);
+  const windowedMessages = manageContext(messages, contextBudget);
 
   for (const msg of windowedMessages) {
     // Check for attachments (multimodal message)
@@ -881,7 +936,7 @@ async function streamSSEChatOnce(
 
     let requestBody: Record<string, unknown> = {
       model,
-      messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent, providerType),
+      messages: toLLMMessages(messages, workspaceContext, hasSandbox, systemPromptOverride, scratchpadContent, providerType, model),
       stream: true,
     };
     if (bodyTransform) {

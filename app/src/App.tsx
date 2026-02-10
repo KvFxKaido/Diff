@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Settings, FolderOpen, Cpu, Loader2, Download, Save, RotateCcw } from 'lucide-react';
+import { FolderOpen, Loader2, Download, Save, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
@@ -32,28 +32,16 @@ import {
 } from '@/lib/snapshot-manager';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatInput } from '@/components/chat/ChatInput';
-import { RepoAndChatSelector } from '@/components/chat/RepoAndChatSelector';
+import { RepoChatDrawer } from '@/components/chat/RepoChatDrawer';
+import { WorkspacePanelButton } from '@/components/chat/WorkspacePanelButton';
 import { WorkspacePanel } from '@/components/chat/WorkspacePanel';
 import { SandboxExpiryBanner } from '@/components/chat/SandboxExpiryBanner';
 import { OnboardingScreen } from '@/sections/OnboardingScreen';
-import { RepoPicker } from '@/sections/RepoPicker';
+import { HomeScreen } from '@/sections/HomeScreen';
 import { FileBrowser } from '@/sections/FileBrowser';
-import type { AppScreen, RepoWithActivity, AIProviderType, SandboxStateCardData } from '@/types';
+import type { AppScreen, RepoWithActivity, SandboxStateCardData } from '@/types';
 import { SettingsSheet } from '@/components/SettingsSheet';
 import './App.css';
-
-const PROVIDER_LABELS: Record<AIProviderType, string> = { 
-  ollama: 'Ollama', 
-  moonshot: 'Kimi', 
-  mistral: 'Mistral',
-  demo: 'Demo'
-};
-const PROVIDER_ICONS: Record<AIProviderType, string> = { 
-  ollama: '🦙', 
-  moonshot: '🌙', 
-  mistral: '🌪️',
-  demo: '⚡'
-};
 
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
 const SNAPSHOT_IDLE_MS = 5 * 60 * 1000;
@@ -132,8 +120,8 @@ function App() {
     isModelLocked,
     conversations,
     activeChatId,
-    sortedChatIds,
     switchChat,
+    renameChat,
     createNewChat,
     deleteChat,
     deleteAllChats,
@@ -279,16 +267,16 @@ function App() {
   }, [hasMistralKey, mistralModelsLoading]);
 
   useEffect(() => {
-    if (settingsOpen && hasOllamaKey && ollamaModels.length === 0 && !ollamaModelsLoading) {
+    if (hasOllamaKey && ollamaModels.length === 0 && !ollamaModelsLoading) {
       refreshOllamaModels();
     }
-  }, [settingsOpen, hasOllamaKey, ollamaModels.length, ollamaModelsLoading, refreshOllamaModels]);
+  }, [hasOllamaKey, ollamaModels.length, ollamaModelsLoading, refreshOllamaModels]);
 
   useEffect(() => {
-    if (settingsOpen && hasMistralKey && mistralModels.length === 0 && !mistralModelsLoading) {
+    if (hasMistralKey && mistralModels.length === 0 && !mistralModelsLoading) {
       refreshMistralModels();
     }
-  }, [settingsOpen, hasMistralKey, mistralModels.length, mistralModelsLoading, refreshMistralModels]);
+  }, [hasMistralKey, mistralModels.length, mistralModelsLoading, refreshMistralModels]);
 
   useEffect(() => {
     if (!hasOllamaKey) {
@@ -356,7 +344,7 @@ function App() {
     if (isSandboxMode) return showFileBrowser && sandbox.sandboxId ? 'file-browser' : 'chat';
     if (isDemo) return showFileBrowser && sandbox.sandboxId ? 'file-browser' : 'chat';
     if (!token) return 'onboarding';
-    if (!activeRepo) return 'repo-picker';
+    if (!activeRepo) return 'home';
     if (showFileBrowser && sandbox.sandboxId) return 'file-browser';
     return 'chat';
   }, [token, activeRepo, isDemo, isSandboxMode, showFileBrowser, sandbox.sandboxId]);
@@ -379,6 +367,13 @@ function App() {
     setIsSandboxMode(true);
     createNewChat();
   }, [isStreaming, abortStream, createNewChat, clearActiveRepo]);
+
+  const handleExitSandboxMode = useCallback(() => {
+    if (isStreaming) abortStream();
+    setIsSandboxMode(false);
+    void sandbox.stop();
+    createNewChat();
+  }, [isStreaming, abortStream, sandbox, createNewChat]);
 
   // Restart sandbox (for expiry recovery)
   const handleSandboxRestart = useCallback(async () => {
@@ -621,6 +616,63 @@ function App() {
     [setActiveRepo],
   );
 
+  const handleSelectRepoFromDrawer = useCallback((repo: RepoWithActivity) => {
+    if (isSandboxMode) {
+      setIsSandboxMode(false);
+      void sandbox.stop();
+    }
+    handleSelectRepo(repo);
+  }, [isSandboxMode, sandbox, handleSelectRepo]);
+
+  const handleBrowseRepos = useCallback(() => {
+    if (isSandboxMode) {
+      if (isStreaming) abortStream();
+      setIsSandboxMode(false);
+      void sandbox.stop();
+      createNewChat();
+    }
+    clearActiveRepo();
+  }, [isSandboxMode, isStreaming, abortStream, sandbox, createNewChat, clearActiveRepo]);
+
+  const handleResumeConversationFromHome = useCallback((chatId: string) => {
+    const conv = conversations[chatId];
+    if (!conv?.repoFullName) return;
+    const repo = repos.find((r) => r.full_name === conv.repoFullName);
+    if (!repo) return;
+    handleSelectRepo(repo);
+    requestAnimationFrame(() => {
+      switchChat(chatId);
+    });
+  }, [conversations, repos, handleSelectRepo, switchChat]);
+
+  const handleOpenSettingsFromDrawer = useCallback((tab: 'you' | 'workspace' | 'ai') => {
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  }, []);
+
+  const ensureUnlockedChatForProviderChange = useCallback(() => {
+    if (isProviderLocked || isModelLocked) {
+      const id = createNewChat();
+      switchChat(id);
+    }
+  }, [isProviderLocked, isModelLocked, createNewChat, switchChat]);
+
+  const handleSelectBackend = useCallback((provider: PreferredProvider) => {
+    ensureUnlockedChatForProviderChange();
+    setPreferredProvider(provider);
+    setActiveBackend(provider);
+  }, [ensureUnlockedChatForProviderChange]);
+
+  const handleSelectOllamaModelFromChat = useCallback((model: string) => {
+    ensureUnlockedChatForProviderChange();
+    setOllamaModel(model);
+  }, [ensureUnlockedChatForProviderChange, setOllamaModel]);
+
+  const handleSelectMistralModelFromChat = useCallback((model: string) => {
+    ensureUnlockedChatForProviderChange();
+    setMistralModel(model);
+  }, [ensureUnlockedChatForProviderChange, setMistralModel]);
+
   // Disconnect: clear everything (both auth methods)
   const handleDisconnect = useCallback(() => {
     appDisconnect();
@@ -849,9 +901,10 @@ function App() {
 
   // Wrap createNewChat to also re-sync repos
   const handleCreateNewChat = useCallback(() => {
-    createNewChat();
+    const id = createNewChat();
+    switchChat(id);
     syncRepos();
-  }, [createNewChat, syncRepos]);
+  }, [createNewChat, switchChat, syncRepos]);
 
   const sendMessageWithSnapshotHeartbeat = useCallback((message: string, attachments?: Parameters<typeof sendMessage>[1]) => {
     markSnapshotActivity();
@@ -912,14 +965,16 @@ function App() {
     );
   }
 
-  if (screen === 'repo-picker') {
+  if (screen === 'home') {
     return (
       <div className="flex h-dvh flex-col bg-[#000] safe-area-top safe-area-bottom">
-        <RepoPicker
+        <HomeScreen
           repos={repos}
           loading={reposLoading}
           error={reposError}
-          onSelect={handleSelectRepo}
+          conversations={conversations}
+          onSelectRepo={handleSelectRepo}
+          onResumeConversation={handleResumeConversationFromHome}
           onDisconnect={handleDisconnect}
           onSandboxMode={handleSandboxMode}
           user={validatedUser}
@@ -948,98 +1003,99 @@ function App() {
   const isConnected = Boolean(token) || isDemo || isSandboxMode;
   const snapshotAgeLabel = latestSnapshot ? formatSnapshotAge(latestSnapshot.createdAt) : null;
   const snapshotIsStale = latestSnapshot ? (Date.now() - latestSnapshot.createdAt) > SNAPSHOT_STALE_MS : false;
+  const activeConversationTitle = conversations[activeChatId]?.title || 'New Chat';
 
   return (
     <div className="flex h-dvh flex-col bg-[#000] safe-area-top safe-area-bottom">
       {/* Top bar */}
       <header className="flex items-center justify-between border-b border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] px-4 py-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          {isSandboxMode ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setIsSandboxMode(false);
-                  sandbox.stop();
-                  createNewChat();
-                }}
-                className="flex items-center gap-1.5 rounded-lg border border-push-edge bg-push-surface px-2.5 py-1 transition-colors hover:border-[#31425a]"
-                title="Exit sandbox mode"
-              >
-                <div className={`h-2 w-2 rounded-full ${sandbox.status === 'ready' ? 'bg-emerald-500' : sandbox.status === 'creating' ? 'bg-[#f59e0b] animate-pulse' : sandbox.status === 'error' ? 'bg-red-500' : 'bg-[#52525b]'}`} />
-                <span className="text-xs font-medium text-[#c5cfde]">Sandbox</span>
-                <span className="text-[10px] text-push-fg-dim">✕</span>
-              </button>
-              <span className="text-[10px] text-push-fg-dim">ephemeral</span>
-              {latestSnapshot && (
-                <span
-                  className={`text-[10px] ${snapshotIsStale ? 'text-amber-400' : 'text-[#5f6b80]'}`}
-                  title={`Latest snapshot: ${new Date(latestSnapshot.createdAt).toLocaleString()}`}
-                >
-                  {snapshotIsStale ? `snapshot stale (${snapshotAgeLabel})` : `snapshot ${snapshotAgeLabel}`}
-                </span>
-              )}
-              {sandbox.status === 'ready' && (
-                <button
-                  onClick={() => captureSnapshot('manual')}
-                  disabled={snapshotSaving || snapshotRestoring}
-                  className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
-                  title="Save Snapshot Now"
-                  aria-label="Save Snapshot Now"
-                >
-                  {snapshotSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  Save
-                </button>
-              )}
-              {latestSnapshot && (
-                <button
-                  onClick={handleRestoreFromSnapshot}
-                  disabled={snapshotSaving || snapshotRestoring || sandbox.status === 'creating'}
-                  className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
-                  title="Restore from Last Snapshot"
-                  aria-label="Restore from Last Snapshot"
-                >
-                  {snapshotRestoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                  Restore
-                </button>
-              )}
-              {sandbox.status === 'ready' && (
-                <button
-                  onClick={handleSandboxDownload}
-                  disabled={sandboxDownloading}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
-                  title="Download workspace"
-                  aria-label="Download workspace"
-                >
-                  {sandboxDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                </button>
-              )}
-              {snapshotRestoring && snapshotRestoreProgress && (
-                <div className="flex min-w-[120px] flex-col gap-1">
-                  <span className="text-[10px] text-push-fg-muted">{snapshotRestoreProgress.message}</span>
-                  <div className="h-1 w-full overflow-hidden rounded bg-[#1a2130]">
-                    <div
-                      className="h-full bg-emerald-500 transition-all duration-300"
-                      style={{ width: `${snapshotStagePercent(snapshotRestoreProgress.stage)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <RepoAndChatSelector
+          <div className="flex min-w-0 items-center gap-2">
+            <RepoChatDrawer
               repos={repos}
               activeRepo={activeRepo}
-              onSelectRepo={handleSelectRepo}
               conversations={conversations}
-              sortedChatIds={sortedChatIds}
               activeChatId={activeChatId}
+              onSelectRepo={handleSelectRepoFromDrawer}
               onSwitchChat={switchChat}
               onNewChat={handleCreateNewChat}
               onDeleteChat={deleteChat}
-              onBrowseRepos={clearActiveRepo}
-              onSandboxMode={handleSandboxMode}
+              onRenameChat={renameChat}
+              onOpenSettings={handleOpenSettingsFromDrawer}
+              onBrowseRepos={handleBrowseRepos}
+              onSandboxMode={isSandboxMode ? undefined : handleSandboxMode}
+              isSandboxMode={isSandboxMode}
+              onExitSandboxMode={handleExitSandboxMode}
             />
-          )}
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-[#f5f7ff]">
+                {isSandboxMode ? 'Sandbox' : activeRepo?.name || 'Push'}
+              </p>
+              <p className="truncate text-[10px] text-[#8b96aa]">
+                {activeConversationTitle}
+              </p>
+            </div>
+
+            {isSandboxMode && (
+              <>
+                <span className="text-[10px] text-push-fg-dim">ephemeral</span>
+                {latestSnapshot && (
+                  <span
+                    className={`text-[10px] ${snapshotIsStale ? 'text-amber-400' : 'text-[#5f6b80]'}`}
+                    title={`Latest snapshot: ${new Date(latestSnapshot.createdAt).toLocaleString()}`}
+                  >
+                    {snapshotIsStale ? `snapshot stale (${snapshotAgeLabel})` : `snapshot ${snapshotAgeLabel}`}
+                  </span>
+                )}
+                {sandbox.status === 'ready' && (
+                  <button
+                    onClick={() => captureSnapshot('manual')}
+                    disabled={snapshotSaving || snapshotRestoring}
+                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
+                    title="Save Snapshot Now"
+                    aria-label="Save Snapshot Now"
+                  >
+                    {snapshotSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    Save
+                  </button>
+                )}
+                {latestSnapshot && (
+                  <button
+                    onClick={handleRestoreFromSnapshot}
+                    disabled={snapshotSaving || snapshotRestoring || sandbox.status === 'creating'}
+                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
+                    title="Restore from Last Snapshot"
+                    aria-label="Restore from Last Snapshot"
+                  >
+                    {snapshotRestoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    Restore
+                  </button>
+                )}
+                {sandbox.status === 'ready' && (
+                  <button
+                    onClick={handleSandboxDownload}
+                    disabled={sandboxDownloading}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
+                    title="Download workspace"
+                    aria-label="Download workspace"
+                  >
+                    {sandboxDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+                {snapshotRestoring && snapshotRestoreProgress && (
+                  <div className="flex min-w-[120px] flex-col gap-1">
+                    <span className="text-[10px] text-push-fg-muted">{snapshotRestoreProgress.message}</span>
+                    <div className="h-1 w-full overflow-hidden rounded bg-[#1a2130]">
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-300"
+                        style={{ width: `${snapshotStagePercent(snapshotRestoreProgress.stage)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {/* File browser */}
@@ -1068,37 +1124,11 @@ function App() {
               <FolderOpen className="h-4 w-4" />
             </button>
           )}
-          
-          {/* Provider indicator with lock status */}
-          <div className="flex items-center gap-2">
-            <div
-              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors ${
-                isProviderLocked 
-                  ? 'border-[#244230] bg-[#08110b]' 
-                  : 'border-push-edge bg-push-surface'
-              }`}
-              title={isProviderLocked 
-                ? `${PROVIDER_LABELS[lockedProvider || 'demo']} locked for this chat` 
-                : 'Provider can be changed until first message'}
-            >
-              <Cpu className={`h-3 w-3 ${isProviderLocked ? 'text-emerald-500' : 'text-push-fg-dim'}`} />
-              <span className={`text-xs ${isProviderLocked ? 'text-[#c5cfde]' : 'text-push-fg-secondary'}`}>
-                {PROVIDER_ICONS[lockedProvider || activeProviderLabel]}
-                {PROVIDER_LABELS[lockedProvider || activeProviderLabel]}
-              </span>
-              {isProviderLocked && (
-                <span className="ml-1 text-[10px] text-push-fg-dim">🔒</span>
-              )}
-            </div>
-          </div>
-          
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-push-edge bg-push-surface text-push-fg-dim transition-colors duration-200 hover:border-[#31425a] hover:bg-[#0d1119] hover:text-[#d1d8e6] active:scale-95"
-            aria-label="Settings"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
+          <WorkspacePanelButton
+            onClick={() => setIsWorkspacePanelOpen(o => !o)}
+            scratchpadHasContent={scratchpad.hasContent}
+            agentActive={agentStatus.active}
+          />
         </div>
       </header>
 
@@ -1114,10 +1144,7 @@ function App() {
               Retry
             </button>
             <button
-              onClick={() => {
-                setIsSandboxMode(false);
-                createNewChat();
-              }}
+              onClick={handleExitSandboxMode}
               className="text-xs font-medium text-[#71717a] hover:text-[#a1a1aa] transition-colors"
             >
               Exit
@@ -1179,10 +1206,32 @@ function App() {
         onStop={abortStream}
         isStreaming={isStreaming}
         repoName={activeRepo?.name}
-        onWorkspacePanelToggle={() => setIsWorkspacePanelOpen(o => !o)}
-        scratchpadHasContent={scratchpad.hasContent}
-        agentActive={agentStatus.active}
         contextUsage={contextUsage}
+        providerControls={{
+          activeProvider: activeProviderLabel,
+          activeBackend,
+          availableProviders,
+          isProviderLocked,
+          lockedProvider,
+          lockedModel,
+          onSelectBackend: handleSelectBackend,
+          ollamaModel,
+          ollamaModelOptions,
+          ollamaModelsLoading,
+          ollamaModelsError,
+          ollamaModelsUpdatedAt,
+          isOllamaModelLocked,
+          refreshOllamaModels,
+          onSelectOllamaModel: handleSelectOllamaModelFromChat,
+          mistralModel,
+          mistralModelOptions,
+          mistralModelsLoading,
+          mistralModelsError,
+          mistralModelsUpdatedAt,
+          isMistralModelLocked,
+          refreshMistralModels,
+          onSelectMistralModel: handleSelectMistralModelFromChat,
+        }}
       />
 
       {/* Workspace panel (console + scratchpad) */}
@@ -1207,6 +1256,7 @@ function App() {
       <SettingsSheet
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        side="left"
         settingsTab={settingsTab}
         setSettingsTab={setSettingsTab}
         auth={{

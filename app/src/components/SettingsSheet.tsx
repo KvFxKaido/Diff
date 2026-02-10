@@ -128,6 +128,7 @@ export interface SettingsDataProps {
 export interface SettingsSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  side?: 'left' | 'right';
   settingsTab: 'you' | 'workspace' | 'ai';
   setSettingsTab: (tab: 'you' | 'workspace' | 'ai') => void;
   auth: SettingsAuthProps;
@@ -142,6 +143,7 @@ export interface SettingsSheetProps {
 export function SettingsSheet({
   open,
   onOpenChange,
+  side = 'right',
   settingsTab,
   setSettingsTab,
   auth,
@@ -152,7 +154,7 @@ export function SettingsSheet({
 }: SettingsSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] flex flex-col overflow-hidden">
+      <SheetContent side={side} className="border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] flex flex-col overflow-hidden">
         <SheetHeader className="shrink-0">
           <SheetTitle className="text-push-fg">Settings</SheetTitle>
           <SheetDescription className="text-push-fg-secondary">
@@ -603,7 +605,7 @@ export function SettingsSheet({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-push-fg">
-                AI Provider
+                AI Defaults
               </label>
               <div className="flex items-center gap-1.5">
                 <div
@@ -612,9 +614,9 @@ export function SettingsSheet({
                   }`}
                 />
                 <span className="text-xs text-push-fg-secondary">
-                  {ai.isProviderLocked
-                    ? `${PROVIDER_LABELS[ai.lockedProvider || 'demo']} 🔒`
-                    : (PROVIDER_LABELS[ai.activeProviderLabel] || 'Offline')}
+                  {ai.activeBackend
+                    ? `${PROVIDER_LABELS[ai.activeBackend]} default`
+                    : `${PROVIDER_LABELS[ai.activeProviderLabel] || 'Offline'} (auto)`}
                 </span>
               </div>
             </div>
@@ -623,48 +625,67 @@ export function SettingsSheet({
             {ai.isProviderLocked && ai.lockedProvider && (
               <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
                 <p className="text-xs text-amber-400">
-                  🔒 {PROVIDER_LABELS[ai.lockedProvider]} locked for this chat
+                  🔒 Current chat is locked to {PROVIDER_LABELS[ai.lockedProvider]}
                 </p>
                 <p className="text-xs text-push-fg-muted mt-0.5">
-                  Start a new chat to switch providers
+                  Defaults below apply to new chats.
                 </p>
                 {ai.lockedModel && (
                   <p className="text-xs text-push-fg-muted mt-0.5">
-                    Model locked for this chat: <span className="font-mono text-push-fg-secondary">{ai.lockedModel}</span>
+                    Current chat model: <span className="font-mono text-push-fg-secondary">{ai.lockedModel}</span>
                   </p>
                 )}
               </div>
             )}
 
             {/* Backend picker */}
-            {ai.availableProviders.length >= 2 && (
-              <div className={`space-y-1.5 ${ai.isProviderLocked ? 'opacity-50' : ''}`}>
-                <label className="text-xs font-medium text-push-fg-secondary">
-                  Active backend
-                  {ai.isProviderLocked && ' (locked)'}
-                </label>
-                <div className="flex gap-2">
-                  {ai.availableProviders.map(([value, label]) => (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-push-fg-secondary">
+                Default backend (new chats)
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    ai.clearPreferredProvider();
+                    ai.setActiveBackend(null);
+                  }}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    ai.activeBackend === null
+                      ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                      : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
+                  }`}
+                >
+                  Auto
+                </button>
+                {ai.availableProviders.length === 0 ? (
+                  <div className="col-span-1 rounded-lg border border-push-edge bg-push-surface px-3 py-1.5 text-xs text-push-fg-dim">
+                    Add a key
+                  </div>
+                ) : (
+                  ai.availableProviders.map(([value, label]) => (
                     <button
                       key={value}
+                      type="button"
                       onClick={() => {
-                        if (ai.isProviderLocked) return;
                         ai.setPreferredProvider(value as PreferredProvider);
                         ai.setActiveBackend(value as PreferredProvider);
                       }}
-                      disabled={ai.isProviderLocked}
                       className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                        (ai.activeBackend ?? ai.activeProviderLabel) === value
+                        ai.activeBackend === value
                           ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
                           : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
-                      } ${ai.isProviderLocked ? 'cursor-not-allowed' : ''}`}
+                      }`}
                     >
                       {label}
                     </button>
-                  ))}
-                </div>
+                  ))
+                )}
               </div>
-            )}
+              <p className="text-[11px] text-push-fg-dim">
+                Sets your preferred provider for new chats.
+              </p>
+            </div>
 
             {/* Ollama */}
             <div className="space-y-2">
@@ -675,11 +696,11 @@ export function SettingsSheet({
                     <p className="text-sm text-push-fg-secondary font-mono">Key Saved</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-push-fg-muted shrink-0">Model:</span>
+                    <span className="text-xs text-push-fg-muted shrink-0">Default model:</span>
                     <select
                       value={ai.ollamaModel}
                       onChange={(e) => ai.setOllamaModel(e.target.value)}
-                      disabled={ai.ollamaModelOptions.length === 0 || ai.isOllamaModelLocked}
+                      disabled={ai.ollamaModelOptions.length === 0 || ai.ollamaModelsLoading}
                       className="flex-1 rounded-md border border-push-edge bg-push-surface px-2 py-1 text-xs text-push-fg font-mono focus:outline-none focus:border-push-sky/50 disabled:opacity-50"
                     >
                       {ai.ollamaModelOptions.length === 0 ? (
@@ -695,7 +716,7 @@ export function SettingsSheet({
                     <button
                       type="button"
                       onClick={ai.refreshOllamaModels}
-                      disabled={ai.ollamaModelsLoading || ai.isOllamaModelLocked}
+                      disabled={ai.ollamaModelsLoading}
                       className="rounded-md border border-push-edge bg-push-surface p-1.5 text-push-fg-secondary hover:text-push-fg disabled:opacity-50"
                       aria-label="Refresh Ollama models"
                       title="Refresh Ollama models"
@@ -715,7 +736,7 @@ export function SettingsSheet({
                   )}
                   {ai.isOllamaModelLocked && ai.lockedModel && (
                     <p className="text-xs text-amber-400">
-                      Locked to {ai.lockedModel} for this chat. Start a new chat to change model.
+                      Current chat remains locked to {ai.lockedModel}. Default applies on new chats.
                     </p>
                   )}
                   <Button
@@ -839,11 +860,11 @@ export function SettingsSheet({
                     <p className="text-sm text-push-fg-secondary font-mono">Key Saved</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-push-fg-muted shrink-0">Model:</span>
+                    <span className="text-xs text-push-fg-muted shrink-0">Default model:</span>
                     <select
                       value={ai.mistralModel}
                       onChange={(e) => ai.setMistralModel(e.target.value)}
-                      disabled={ai.mistralModelOptions.length === 0 || ai.isMistralModelLocked}
+                      disabled={ai.mistralModelOptions.length === 0 || ai.mistralModelsLoading}
                       className="flex-1 rounded-md border border-push-edge bg-push-surface px-2 py-1 text-xs text-push-fg font-mono focus:outline-none focus:border-push-sky/50 disabled:opacity-50"
                     >
                       {ai.mistralModelOptions.length === 0 ? (
@@ -859,7 +880,7 @@ export function SettingsSheet({
                     <button
                       type="button"
                       onClick={ai.refreshMistralModels}
-                      disabled={ai.mistralModelsLoading || ai.isMistralModelLocked}
+                      disabled={ai.mistralModelsLoading}
                       className="rounded-md border border-push-edge bg-push-surface p-1.5 text-push-fg-secondary hover:text-push-fg disabled:opacity-50"
                       aria-label="Refresh Mistral models"
                       title="Refresh Mistral models"
@@ -879,7 +900,7 @@ export function SettingsSheet({
                   )}
                   {ai.isMistralModelLocked && ai.lockedModel && (
                     <p className="text-xs text-amber-400">
-                      Locked to {ai.lockedModel} for this chat. Start a new chat to change model.
+                      Current chat remains locked to {ai.lockedModel}. Default applies on new chats.
                     </p>
                   )}
                   <Button

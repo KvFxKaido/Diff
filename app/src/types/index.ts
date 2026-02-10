@@ -374,7 +374,7 @@ export interface GitHubUser {
   avatar_url: string;
 }
 
-export type AppScreen = 'onboarding' | 'repo-picker' | 'chat' | 'file-browser';
+export type AppScreen = 'onboarding' | 'home' | 'chat' | 'file-browser';
 
 // File browser types (re-exported from sandbox-client for convenience)
 export interface FileEntry {

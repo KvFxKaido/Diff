@@ -1,8 +1,9 @@
 /**
  * WorkspacePanel — tabbed side panel combining Console + Scratchpad.
  *
- * Desktop: slides from the right (420px wide)
- * Mobile: slides from bottom (70% viewport height)
+ * Slides from the right on all screen sizes.
+ * Mobile: nearly full-width overlay.
+ * Desktop: fixed 420px side panel.
  *
  * Console tab: read-only log of tool calls and results.
  * Scratchpad tab: shared notepad editable by user and agent.
@@ -48,6 +49,7 @@ export function WorkspacePanel({
   onDeleteMemory,
 }: WorkspacePanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('console');
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [isNamingMemory, setIsNamingMemory] = useState(false);
@@ -102,6 +104,28 @@ export function WorkspacePanel({
     }
   }, [isNamingMemory]);
 
+  // Track mobile virtual keyboard inset so the side panel stays usable while typing.
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const updateInset = () => {
+      const rawInset = window.innerHeight - viewport.height - viewport.offsetTop;
+      const nextInset = Math.max(0, Math.round(rawInset));
+      setKeyboardInset(nextInset > 1 ? nextInset : 0);
+    };
+
+    updateInset();
+    viewport.addEventListener('resize', updateInset);
+    viewport.addEventListener('scroll', updateInset);
+    return () => {
+      viewport.removeEventListener('resize', updateInset);
+      viewport.removeEventListener('scroll', updateInset);
+    };
+  }, [isOpen]);
+
   // ── Scratchpad memory handlers ──────────────────────────────────────
   const handleStartNaming = () => {
     setMemoryName('');
@@ -136,6 +160,9 @@ export function WorkspacePanel({
   };
 
   const activeMemory = memories.find((memory) => memory.id === activeMemoryId) ?? null;
+  const panelStyle = isOpen && keyboardInset > 0
+    ? { paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardInset}px)` }
+    : undefined;
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
@@ -150,13 +177,10 @@ export function WorkspacePanel({
 
       {/* Panel */}
       <div
+        style={panelStyle}
         className={`fixed z-50 bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] border-[#151b26] transition-transform duration-300 ease-out flex flex-col
-          inset-x-0 bottom-0 h-[70vh] rounded-t-2xl border-t border-x pb-[env(safe-area-inset-bottom)] md:pb-0
-          md:inset-y-0 md:right-0 md:left-auto md:w-[420px] md:h-full md:rounded-none md:rounded-l-2xl md:border-l md:border-t-0 md:border-b-0
-          ${isOpen
-            ? 'translate-y-0 md:translate-y-0 md:translate-x-0'
-            : 'translate-y-full md:translate-y-0 md:translate-x-full'
-          }
+          inset-y-0 right-0 w-[90vw] max-w-[420px] rounded-l-2xl border-l shadow-[0_24px_64px_rgba(0,0,0,0.72)] pb-[env(safe-area-inset-bottom)] md:pb-0
+          ${isOpen ? 'translate-x-0' : 'translate-x-full'}
         `}
       >
         {/* Header: close button */}
