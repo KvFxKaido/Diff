@@ -22,6 +22,14 @@ function EmptyState({
   isSandboxMode?: boolean;
   onSuggestion?: (text: string) => void;
 }) {
+  const [hexTap, setHexTap] = useState(false);
+
+  const handleHexTap = () => {
+    setHexTap(false);
+    // Force reflow so re-adding the class restarts the animation
+    requestAnimationFrame(() => setHexTap(true));
+  };
+
   const suggestions = useMemo(() => {
     if (isSandboxMode) {
       return [
@@ -47,22 +55,28 @@ function EmptyState({
   return (
     <div className="flex flex-1 items-center justify-center px-8">
       <div className="text-center max-w-sm">
-        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#1e2634] bg-[linear-gradient(180deg,#0d1119_0%,#070a10_100%)] shadow-[0_12px_30px_rgba(0,0,0,0.55)]">
+        <button
+          type="button"
+          onClick={handleHexTap}
+          className="mx-auto mb-5 flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-[#1e2634] bg-[linear-gradient(180deg,#0d1119_0%,#070a10_100%)] shadow-[0_12px_30px_rgba(0,0,0,0.55)] active:scale-95 transition-transform"
+        >
           <svg
             width="22"
             height="22"
             viewBox="0 0 16 16"
             fill="none"
-            className="text-push-accent"
+            className={`text-push-accent transition-colors ${hexTap ? 'hex-tap' : ''}`}
+            onAnimationEnd={() => setHexTap(false)}
           >
             <path
               d="M8 1L14.5 5V11L8 15L1.5 11V5L8 1Z"
               stroke="currentColor"
               strokeWidth="1.5"
               strokeLinejoin="round"
+              className={`transition-all duration-300 ${hexTap ? 'fill-[#0070f3]/20' : 'fill-transparent'}`}
             />
           </svg>
-        </div>
+        </button>
         <h2 className="text-lg font-semibold text-[#fafafa] mb-2">
           {activeRepo ? activeRepo.name : isSandboxMode ? 'Sandbox' : 'Push'}
         </h2>

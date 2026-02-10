@@ -79,6 +79,26 @@ select:focus-visible {
   }
 }
 
+/* Hex icon tap animation */
+@keyframes hex-tap {
+  0% {
+    transform: rotate(0deg) scale(1);
+    filter: drop-shadow(0 0 0 rgba(0, 112, 243, 0));
+  }
+  40% {
+    transform: rotate(30deg) scale(1.15);
+    filter: drop-shadow(0 0 12px rgba(0, 112, 243, 0.6));
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+    filter: drop-shadow(0 0 0 rgba(0, 112, 243, 0));
+  }
+}
+
+.hex-tap {
+  animation: hex-tap 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 /* Fallback: when keyboard is visible, ensure inputs stay visible */
 @media (max-height: 500px) {
   [data-side="bottom"] {
