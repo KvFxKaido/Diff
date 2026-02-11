@@ -260,7 +260,7 @@ export function RepoChatDrawer({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-[#b4becf] transition-colors duration-200 hover:text-[#f5f7ff] active:scale-95"
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.06] bg-[#0a0e16]/80 text-[#b4becf] backdrop-blur-xl transition-colors duration-200 hover:text-[#f5f7ff] active:scale-95"
         aria-label="Open chats and repos"
         title="Chats and repos"
       >

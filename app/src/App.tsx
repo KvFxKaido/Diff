@@ -1008,10 +1008,9 @@ function App() {
   return (
     <div className="flex h-dvh flex-col bg-[#000] safe-area-top safe-area-bottom">
       {/* Top bar */}
-      <header className="relative z-10 px-3 pt-3 pb-1">
-        <div className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-[#0a0e16]/80 px-3 py-2 backdrop-blur-xl">
+      <header className="relative z-10 flex items-center justify-between px-3 pt-3 pb-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1.5 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 py-1.5 pl-1.5 pr-3 backdrop-blur-xl">
             <RepoChatDrawer
               repos={repos}
               activeRepo={activeRepo}
@@ -1036,8 +1035,8 @@ function App() {
                 {activeConversationTitle}
               </p>
             </div>
-
-            {isSandboxMode && (
+          </div>
+          {isSandboxMode && (
               <>
                 <span className="text-[10px] text-push-fg-dim">ephemeral</span>
                 {latestSnapshot && (
@@ -1096,9 +1095,8 @@ function App() {
                 )}
               </>
             )}
-          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* File browser */}
           {(activeRepo || isSandboxMode) && (
             <button
@@ -1112,7 +1110,7 @@ function App() {
                 if (id) setShowFileBrowser(true);
               }}
               disabled={sandbox.status === 'creating'}
-              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-200 spring-press ${
+              className={`flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.06] bg-[#0a0e16]/80 backdrop-blur-xl transition-all duration-200 spring-press ${
                 sandbox.status === 'creating'
                   ? 'text-[#f59e0b] animate-pulse'
                   : sandbox.status === 'ready'
@@ -1130,7 +1128,6 @@ function App() {
             scratchpadHasContent={scratchpad.hasContent}
             agentActive={agentStatus.active}
           />
-        </div>
         </div>
         <div className="pointer-events-none absolute inset-x-0 top-full h-8 bg-gradient-to-b from-black to-transparent" />
       </header>
