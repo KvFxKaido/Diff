@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   Box,
+  Check,
+  ChevronDown,
   GitBranch,
   GitCommit,
   GitPullRequest,
@@ -11,6 +13,14 @@ import {
   Sparkles,
   Loader2,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ActiveRepo, Conversation, GitHubUser, RepoWithActivity } from '@/types';
 
 interface HomeScreenProps {
@@ -18,7 +28,13 @@ interface HomeScreenProps {
   loading: boolean;
   error?: string | null;
   conversations: Record<string, Conversation>;
+  activeRepo: ActiveRepo | null;
   onSelectRepo: (repo: RepoWithActivity) => void;
+  onSelectBranch?: (branch: string) => void;
+  availableBranches?: { name: string; isDefault: boolean; isProtected: boolean }[];
+  branchesLoading?: boolean;
+  branchesError?: string | null;
+  onRefreshBranches?: () => void;
   onResumeConversation: (chatId: string) => void;
   onDisconnect: () => void;
   onSandboxMode: () => void;
@@ -77,7 +93,13 @@ export function HomeScreen({
   loading,
   error,
   conversations,
+  activeRepo,
   onSelectRepo,
+  onSelectBranch,
+  availableBranches = [],
+  branchesLoading = false,
+  branchesError = null,
+  onRefreshBranches,
   onResumeConversation,
   onDisconnect,
   onSandboxMode,
@@ -85,17 +107,21 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const [showAllRepos, setShowAllRepos] = useState(false);
   const [search, setSearch] = useState('');
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
 
-  // Read the active repo from localStorage to get the current branch
-  const activeRepoInfo = useMemo<ActiveRepo | null>(() => {
-    try {
-      const raw = localStorage.getItem('active_repo');
-      if (!raw) return null;
-      return JSON.parse(raw) as ActiveRepo;
-    } catch {
-      return null;
-    }
-  }, []);
+  const currentBranch = activeRepo?.current_branch || activeRepo?.default_branch || null;
+  const homeBranchOptions = useMemo(() => {
+    if (!currentBranch) return availableBranches;
+    if (availableBranches.some((b) => b.name === currentBranch)) return availableBranches;
+    return [
+      {
+        name: currentBranch,
+        isDefault: currentBranch === (activeRepo?.default_branch || 'main'),
+        isProtected: false,
+      },
+      ...availableBranches,
+    ];
+  }, [activeRepo?.default_branch, availableBranches, currentBranch]);
 
   const repoChatMeta = useMemo(() => {
     const meta = new Map<string, RepoChatMeta>();
@@ -154,8 +180,8 @@ export function HomeScreen({
 
   const renderRepoButton = (repo: RepoWithActivity) => {
     const chatMeta = repoChatMeta.get(repo.full_name);
-    const isActiveRepo = activeRepoInfo?.full_name === repo.full_name;
-    const activeBranch = isActiveRepo ? activeRepoInfo?.current_branch : undefined;
+    const isActiveRepo = activeRepo?.full_name === repo.full_name;
+    const activeBranch = isActiveRepo ? activeRepo?.current_branch : undefined;
     return (
       <button
         key={repo.id}
@@ -230,6 +256,95 @@ export function HomeScreen({
             <span className="truncate text-sm font-medium text-push-fg">
               {user.login}
             </span>
+          )}
+          {activeRepo && onSelectBranch && (
+            <DropdownMenu
+              open={branchMenuOpen}
+              onOpenChange={(open) => {
+                setBranchMenuOpen(open);
+                if (open && onRefreshBranches && !branchesLoading && homeBranchOptions.length === 0) {
+                  onRefreshBranches();
+                }
+              }}
+            >
+              <DropdownMenuTrigger className="flex items-center gap-1 rounded-full border border-push-edge bg-push-surface px-2 py-1 text-[11px] text-[#9db8df] transition-colors hover:border-[#31425a] hover:bg-[#0d1119]">
+                <GitBranch className="h-3 w-3 text-[#5f6b80]" />
+                <span className="max-w-[100px] truncate">{currentBranch || activeRepo.default_branch}</span>
+                <ChevronDown className={`h-3 w-3 text-[#5f6b80] transition-transform ${branchMenuOpen ? 'rotate-180' : ''}`} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                sideOffset={8}
+                className="w-[240px] rounded-xl border border-push-edge bg-push-grad-card shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
+              >
+                <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-push-fg-dim">
+                  {activeRepo.name} Branches
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-push-edge" />
+
+                {branchesLoading && (
+                  <DropdownMenuItem disabled className="mx-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-push-fg-dim">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Loading branches...
+                  </DropdownMenuItem>
+                )}
+
+                {!branchesLoading && branchesError && (
+                  <>
+                    <DropdownMenuItem disabled className="mx-1 rounded-lg px-3 py-2 text-xs text-red-400">
+                      Failed to load branches
+                    </DropdownMenuItem>
+                    {onRefreshBranches && (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          onRefreshBranches();
+                        }}
+                        className="mx-1 rounded-lg px-3 py-2 text-xs text-push-link hover:bg-[#0d1119]"
+                      >
+                        Retry
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
+
+                {!branchesLoading && !branchesError && homeBranchOptions.length === 0 && (
+                  <DropdownMenuItem disabled className="mx-1 rounded-lg px-3 py-2 text-xs text-push-fg-dim">
+                    No branches found
+                  </DropdownMenuItem>
+                )}
+
+                {!branchesLoading && !branchesError && homeBranchOptions.map((branch) => {
+                  const isActiveBranch = branch.name === currentBranch;
+                  return (
+                    <DropdownMenuItem
+                      key={branch.name}
+                      onSelect={() => {
+                        if (!isActiveBranch) onSelectBranch(branch.name);
+                      }}
+                      className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
+                        isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
+                      }`}
+                    >
+                      <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
+                        {branch.name}
+                      </span>
+                      {branch.isDefault && (
+                        <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
+                          default
+                        </span>
+                      )}
+                      {branch.isProtected && (
+                        <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
+                          protected
+                        </span>
+                      )}
+                      {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
         </div>

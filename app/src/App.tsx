@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, Plus, ChevronDown, Check } from 'lucide-react';
+import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, ChevronDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
@@ -1080,7 +1080,19 @@ function App() {
           loading={reposLoading}
           error={reposError}
           conversations={conversations}
+          activeRepo={activeRepo}
           onSelectRepo={handleSelectRepo}
+          onSelectBranch={setCurrentBranch}
+          availableBranches={displayBranches}
+          branchesLoading={repoBranchesLoading}
+          branchesError={repoBranchesError}
+          onRefreshBranches={
+            activeRepo
+              ? () => {
+                  void loadRepoBranches(activeRepo.full_name);
+                }
+              : undefined
+          }
           onResumeConversation={handleResumeConversationFromHome}
           onDisconnect={handleDisconnect}
           onSandboxMode={handleSandboxMode}
@@ -1179,6 +1191,24 @@ function App() {
                 sideOffset={8}
                 className="w-[240px] rounded-xl border border-push-edge bg-push-grad-card shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
               >
+                {isOnMain ? (
+                  <DropdownMenuItem
+                    onSelect={() => setShowBranchCreate(true)}
+                    className="mx-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-push-fg-secondary hover:bg-[#0d1119]"
+                  >
+                    <GitBranch className="h-3.5 w-3.5" />
+                    Create branch
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    onSelect={() => setShowMergeFlow(true)}
+                    className="mx-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-emerald-300 hover:bg-[#0d1119]"
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                    Merge into {activeRepo.default_branch}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator className="bg-push-edge" />
                 <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-push-fg-dim">
                   Switch Branch
                 </DropdownMenuLabel>
@@ -1307,30 +1337,6 @@ function App() {
             )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Branch action button — Create Branch (on main) or Merge (on feature branch) */}
-          {activeRepo && !isSandboxMode && (
-            isOnMain ? (
-              <button
-                onClick={() => setShowBranchCreate(true)}
-                className="flex h-8 items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 px-2.5 backdrop-blur-xl text-[11px] font-medium text-push-fg-dim transition-all duration-200 hover:text-[#d1d8e6] active:scale-95"
-                aria-label="Create branch"
-                title="Create a new branch"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Branch
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowMergeFlow(true)}
-                className="flex h-8 items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-950/30 px-2.5 backdrop-blur-xl text-[11px] font-medium text-emerald-400 transition-all duration-200 hover:bg-emerald-950/50 hover:text-emerald-300 active:scale-95"
-                aria-label={`Merge ${currentBranch} into ${activeRepo.default_branch}`}
-                title={`Merge ${currentBranch} into ${activeRepo.default_branch}`}
-              >
-                <GitMerge className="h-3.5 w-3.5" />
-                Merge
-              </button>
-            )
-          )}
           {/* File browser */}
           {(activeRepo || isSandboxMode) && (
             <button
