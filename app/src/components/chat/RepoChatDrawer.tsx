@@ -270,7 +270,7 @@ export function RepoChatDrawer({
       <Sheet open={open} onOpenChange={closeDrawer}>
       <SheetContent
         side="left"
-        className="w-[86vw] border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] p-0 text-[#f5f7ff] sm:max-w-sm [&>[data-slot=sheet-close]]:text-[#b4becf] [&>[data-slot=sheet-close]]:hover:text-[#f5f7ff]"
+        className="w-[86vw] rounded-r-2xl border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] p-0 text-[#f5f7ff] shadow-[0_16px_48px_rgba(0,0,0,0.6),0_4px_16px_rgba(0,0,0,0.3)] sm:max-w-sm [&>[data-slot=sheet-close]]:text-[#b4becf] [&>[data-slot=sheet-close]]:hover:text-[#f5f7ff]"
       >
         <div className="relative h-full overflow-hidden">
           <div
