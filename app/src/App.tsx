@@ -1008,7 +1008,8 @@ function App() {
   return (
     <div className="flex h-dvh flex-col bg-[#000] safe-area-top safe-area-bottom">
       {/* Top bar */}
-      <header className="flex items-center justify-between px-4 pt-3 pb-2">
+      <header className="relative z-10 px-3 pt-3 pb-1">
+        <div className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-[#0a0e16]/80 px-3 py-2 backdrop-blur-xl">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <RepoChatDrawer
@@ -1130,6 +1131,8 @@ function App() {
             agentActive={agentStatus.active}
           />
         </div>
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 top-full h-8 bg-gradient-to-b from-black to-transparent" />
       </header>
 
       {/* Sandbox error banner — shown when Modal call fails */}
