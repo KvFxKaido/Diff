@@ -8,6 +8,7 @@
 
 import type { ToolExecutionResult, PRCardData, PRListCardData, CommitListCardData, BranchListCardData, FileListCardData, CICheck, CIStatusCardData, FileSearchCardData, FileSearchMatch, CommitFilesCardData, WorkflowRunItem, WorkflowRunsCardData, WorkflowJob, WorkflowLogsCardData } from '@/types';
 import { extractBareToolJsonObjects } from './tool-dispatch';
+import { safeStorageGet } from './safe-storage';
 
 const OAUTH_STORAGE_KEY = 'github_access_token';
 const APP_TOKEN_STORAGE_KEY = 'github_app_token';
@@ -84,8 +85,8 @@ const BASE_DELAY_MS = 1000; // 1s initial delay for exponential backoff
 // --- Auth helper (mirrors useGitHub / useRepos pattern) ---
 
 export function getGitHubHeaders(): Record<string, string> {
-  const oauthToken = localStorage.getItem(OAUTH_STORAGE_KEY) || '';
-  const appToken = localStorage.getItem(APP_TOKEN_STORAGE_KEY) || '';
+  const oauthToken = safeStorageGet(OAUTH_STORAGE_KEY) || '';
+  const appToken = safeStorageGet(APP_TOKEN_STORAGE_KEY) || '';
   const authToken = oauthToken || appToken || GITHUB_TOKEN;
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github.v3+json',
@@ -178,6 +179,64 @@ async function fetchWithRetry(url: string, options?: RequestInit): Promise<Respo
 
 export async function githubFetch(url: string, options?: RequestInit): Promise<Response> {
   return fetchWithRetry(url, options);
+}
+
+interface RepoBranchApi {
+  name?: string;
+  protected?: boolean;
+}
+
+function parseNextLink(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+  return match ? match[1] : null;
+}
+
+export async function fetchRepoBranches(
+  repo: string,
+  maxBranches: number = 500,
+): Promise<{ defaultBranch: string; branches: BranchListCardData['branches'] }> {
+  const headers = getGitHubHeaders();
+
+  const repoRes = await githubFetch(`https://api.github.com/repos/${repo}`, { headers });
+  if (!repoRes.ok) {
+    throw new Error(formatGitHubError(repoRes.status, `repo info for ${repo}`));
+  }
+  const repoData = await repoRes.json();
+  const defaultBranch = repoData?.default_branch || 'main';
+
+  const pageSize = 100;
+  const maxPages = Math.max(1, Math.ceil(maxBranches / pageSize));
+  const all: RepoBranchApi[] = [];
+  let pageCount = 0;
+  let nextUrl: string | null = `https://api.github.com/repos/${repo}/branches?per_page=${pageSize}&page=1`;
+
+  while (nextUrl && pageCount < maxPages && all.length < maxBranches) {
+    const res = await githubFetch(nextUrl, { headers });
+    if (!res.ok) {
+      throw new Error(formatGitHubError(res.status, `branches on ${repo}`));
+    }
+    const pageData = await res.json();
+    if (!Array.isArray(pageData)) break;
+    all.push(...(pageData as RepoBranchApi[]));
+    nextUrl = parseNextLink(res.headers.get('Link'));
+    pageCount++;
+  }
+
+  const branchItems: BranchListCardData['branches'] = all
+    .filter((b) => typeof b.name === 'string' && b.name.trim().length > 0)
+    .map((b) => ({
+      name: b.name as string,
+      isDefault: b.name === defaultBranch,
+      isProtected: Boolean(b.protected),
+    }))
+    .sort((a, b) => {
+      if (a.name === defaultBranch) return -1;
+      if (b.name === defaultBranch) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  return { defaultBranch, branches: branchItems };
 }
 
 // --- Detection helpers ---
@@ -653,21 +712,7 @@ async function executeListDirectory(repo: string, path: string = '', branch?: st
 }
 
 async function executeListBranches(repo: string): Promise<ToolExecutionResult> {
-  const headers = getGitHubHeaders();
-
-  // Fetch branches and repo info in parallel
-  const [branchRes, repoRes] = await Promise.all([
-    githubFetch(`https://api.github.com/repos/${repo}/branches?per_page=30`, { headers }),
-    githubFetch(`https://api.github.com/repos/${repo}`, { headers }),
-  ]);
-
-  if (!branchRes.ok) {
-    throw new Error(formatGitHubError(branchRes.status, `branches on ${repo}`));
-  }
-
-  const branches = await branchRes.json();
-  const repoData = repoRes.ok ? await repoRes.json() : null;
-  const defaultBranch = repoData?.default_branch || 'main';
+  const { defaultBranch, branches } = await fetchRepoBranches(repo, 30);
 
   if (branches.length === 0) {
     return { text: `[Tool Result — list_branches]\nNo branches found on ${repo}.` };
@@ -678,18 +723,15 @@ async function executeListBranches(repo: string): Promise<ToolExecutionResult> {
     `${branches.length} branch${branches.length > 1 ? 'es' : ''} on ${repo} (default: ${defaultBranch}):\n`,
   ];
 
-  const branchItems: BranchListCardData['branches'] = [];
   for (const b of branches) {
-    const isDefault = b.name === defaultBranch;
-    const marker = isDefault ? ' ★' : '';
-    const protectedMark = b.protected ? ' 🔒' : '';
+    const marker = b.isDefault ? ' ★' : '';
+    const protectedMark = b.isProtected ? ' 🔒' : '';
     lines.push(`  ${b.name}${marker}${protectedMark}`);
-    branchItems.push({ name: b.name, isDefault, isProtected: b.protected || false });
   }
 
   return {
     text: lines.join('\n'),
-    card: { type: 'branch-list', data: { repo, defaultBranch, branches: branchItems } },
+    card: { type: 'branch-list', data: { repo, defaultBranch, branches } },
   };
 }
 

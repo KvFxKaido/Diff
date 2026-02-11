@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const STORAGE_KEY = 'moonshot_api_key';
 
@@ -7,12 +8,8 @@ const STORAGE_KEY = 'moonshot_api_key';
  * Checks localStorage first, falls back to env var.
  */
 export function getMoonshotKey(): string | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return stored;
-  } catch {
-    // SSR / restricted context
-  }
+  const stored = safeStorageGet(STORAGE_KEY);
+  if (stored) return stored;
   const envKey = import.meta.env.VITE_MOONSHOT_API_KEY;
   return envKey || null;
 }
@@ -26,12 +23,12 @@ export function useMoonshotKey() {
   const setKey = useCallback((newKey: string) => {
     const trimmed = newKey.trim();
     if (!trimmed) return;
-    localStorage.setItem(STORAGE_KEY, trimmed);
+    safeStorageSet(STORAGE_KEY, trimmed);
     setKeyState(trimmed);
   }, []);
 
   const clearKey = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    safeStorageRemove(STORAGE_KEY);
     setKeyState(import.meta.env.VITE_MOONSHOT_API_KEY || null);
   }, []);
 

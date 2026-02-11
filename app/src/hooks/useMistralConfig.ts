@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { MISTRAL_DEFAULT_MODEL } from '@/lib/providers';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const KEY_STORAGE = 'mistral_api_key';
 const MODEL_STORAGE = 'mistral_model';
@@ -9,12 +10,8 @@ const MODEL_STORAGE = 'mistral_model';
  * Checks localStorage first, falls back to env var.
  */
 export function getMistralKey(): string | null {
-  try {
-    const stored = localStorage.getItem(KEY_STORAGE);
-    if (stored) return stored;
-  } catch {
-    // SSR / restricted context
-  }
+  const stored = safeStorageGet(KEY_STORAGE);
+  if (stored) return stored;
   const envKey = import.meta.env.VITE_MISTRAL_API_KEY;
   return envKey || null;
 }
@@ -25,29 +22,25 @@ export function getMistralKey(): string | null {
 export function useMistralConfig() {
   const [key, setKeyState] = useState<string | null>(() => getMistralKey());
   const [model, setModelState] = useState<string>(() => {
-    try {
-      return localStorage.getItem(MODEL_STORAGE) || MISTRAL_DEFAULT_MODEL;
-    } catch {
-      return MISTRAL_DEFAULT_MODEL;
-    }
+    return safeStorageGet(MODEL_STORAGE) || MISTRAL_DEFAULT_MODEL;
   });
 
   const setKey = useCallback((newKey: string) => {
     const trimmed = newKey.trim();
     if (!trimmed) return;
-    localStorage.setItem(KEY_STORAGE, trimmed);
+    safeStorageSet(KEY_STORAGE, trimmed);
     setKeyState(trimmed);
   }, []);
 
   const clearKey = useCallback(() => {
-    localStorage.removeItem(KEY_STORAGE);
+    safeStorageRemove(KEY_STORAGE);
     setKeyState(import.meta.env.VITE_MISTRAL_API_KEY || null);
   }, []);
 
   const setModel = useCallback((newModel: string) => {
     const trimmed = newModel.trim();
     if (!trimmed) return;
-    localStorage.setItem(MODEL_STORAGE, trimmed);
+    safeStorageSet(MODEL_STORAGE, trimmed);
     setModelState(trimmed);
   }, []);
 

@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createSandbox, cleanupSandbox, execInSandbox, setSandboxOwnerToken, getSandboxOwnerToken } from '@/lib/sandbox-client';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 export type SandboxStatus = 'idle' | 'creating' | 'ready' | 'error';
 
@@ -32,20 +33,16 @@ interface PersistedSandboxSession {
 }
 
 function getGitHubToken(): string {
-  return localStorage.getItem(OAUTH_STORAGE_KEY) || localStorage.getItem(APP_TOKEN_STORAGE_KEY) || GITHUB_TOKEN;
+  return safeStorageGet(OAUTH_STORAGE_KEY) || safeStorageGet(APP_TOKEN_STORAGE_KEY) || GITHUB_TOKEN;
 }
 
 function saveSession(session: PersistedSandboxSession): void {
-  try {
-    localStorage.setItem(SANDBOX_SESSION_KEY, JSON.stringify(session));
-  } catch {
-    // Quota errors — not critical
-  }
+  safeStorageSet(SANDBOX_SESSION_KEY, JSON.stringify(session));
 }
 
 function loadSession(): PersistedSandboxSession | null {
   try {
-    const raw = localStorage.getItem(SANDBOX_SESSION_KEY);
+    const raw = safeStorageGet(SANDBOX_SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as PersistedSandboxSession;
     // repoFullName can be '' for sandbox mode (ephemeral, no repo)
@@ -57,7 +54,7 @@ function loadSession(): PersistedSandboxSession | null {
 }
 
 function clearSession(): void {
-  localStorage.removeItem(SANDBOX_SESSION_KEY);
+  safeStorageRemove(SANDBOX_SESSION_KEY);
   setSandboxOwnerToken(null);
 }
 

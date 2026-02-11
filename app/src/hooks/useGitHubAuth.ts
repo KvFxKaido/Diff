@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitHubUser } from '../types';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const STORAGE_KEY = 'github_access_token';
 const STATE_KEY = 'github_oauth_state';
@@ -48,7 +49,7 @@ function getOAuthRedirectUri(): string {
 }
 
 export function useGitHubAuth(): UseGitHubAuth {
-  const [token, setToken] = useState(() => localStorage.getItem(STORAGE_KEY) || ENV_TOKEN);
+  const [token, setToken] = useState(() => safeStorageGet(STORAGE_KEY) || ENV_TOKEN);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validatedUser, setValidatedUser] = useState<GitHubUser | null>(null);
@@ -59,7 +60,7 @@ export function useGitHubAuth(): UseGitHubAuth {
     if (mountValidated.current) return;
     mountValidated.current = true;
 
-    const stored = localStorage.getItem(STORAGE_KEY) || ENV_TOKEN;
+    const stored = safeStorageGet(STORAGE_KEY) || ENV_TOKEN;
     if (!stored) return;
 
     validateToken(stored).then((user) => {
@@ -67,7 +68,7 @@ export function useGitHubAuth(): UseGitHubAuth {
         setValidatedUser(user);
       } else {
         // Token expired or revoked — clear it
-        localStorage.removeItem(STORAGE_KEY);
+        safeStorageRemove(STORAGE_KEY);
         setToken('');
         setValidatedUser(null);
       }
@@ -83,7 +84,7 @@ export function useGitHubAuth(): UseGitHubAuth {
 
     const user = await validateToken(trimmed);
     if (user) {
-      localStorage.setItem(STORAGE_KEY, trimmed);
+      safeStorageSet(STORAGE_KEY, trimmed);
       setToken(trimmed);
       setValidatedUser(user);
       setLoading(false);
@@ -102,7 +103,7 @@ export function useGitHubAuth(): UseGitHubAuth {
     }
 
     const state = crypto.randomUUID();
-    sessionStorage.setItem(STATE_KEY, state);
+    safeStorageSet(STATE_KEY, state, 'session');
 
     const redirectUri = getOAuthRedirectUri();
     const params = new URLSearchParams({
@@ -116,7 +117,7 @@ export function useGitHubAuth(): UseGitHubAuth {
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    safeStorageRemove(STORAGE_KEY);
     setToken('');
     setValidatedUser(null);
   }, []);
@@ -130,8 +131,8 @@ export function useGitHubAuth(): UseGitHubAuth {
       return;
     }
 
-    const expectedState = sessionStorage.getItem(STATE_KEY);
-    sessionStorage.removeItem(STATE_KEY);
+    const expectedState = safeStorageGet(STATE_KEY, 'session');
+    safeStorageRemove(STATE_KEY, 'session');
 
     if (!state || state !== expectedState) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -167,7 +168,7 @@ export function useGitHubAuth(): UseGitHubAuth {
         if (!data.access_token) {
           throw new Error('No access token returned');
         }
-        localStorage.setItem(STORAGE_KEY, data.access_token);
+        safeStorageSet(STORAGE_KEY, data.access_token);
         setToken(data.access_token);
         window.history.replaceState({}, document.title, window.location.pathname);
 

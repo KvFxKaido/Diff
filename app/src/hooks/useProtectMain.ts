@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const GLOBAL_DEFAULT_KEY = 'protect_main_default';
 
@@ -9,22 +10,14 @@ function repoKey(repoFullName: string): string {
 }
 
 function loadGlobalDefault(): boolean {
-  try {
-    return localStorage.getItem(GLOBAL_DEFAULT_KEY) === 'true';
-  } catch {
-    return false;
-  }
+  return safeStorageGet(GLOBAL_DEFAULT_KEY) === 'true';
 }
 
 function loadRepoOverride(repoFullName?: string): RepoOverride {
   if (!repoFullName) return 'inherit';
-  try {
-    const raw = localStorage.getItem(repoKey(repoFullName));
-    if (raw === 'always' || raw === 'never') return raw;
-    return 'inherit';
-  } catch {
-    return 'inherit';
-  }
+  const raw = safeStorageGet(repoKey(repoFullName));
+  if (raw === 'always' || raw === 'never') return raw;
+  return 'inherit';
 }
 
 /**
@@ -50,7 +43,7 @@ export function useProtectMain(repoFullName?: string) {
   }, [repoFullName]);
 
   const setGlobalDefault = useCallback((value: boolean) => {
-    localStorage.setItem(GLOBAL_DEFAULT_KEY, String(value));
+    safeStorageSet(GLOBAL_DEFAULT_KEY, String(value));
     setGlobalDefaultState(value);
   }, []);
 
@@ -58,9 +51,9 @@ export function useProtectMain(repoFullName?: string) {
     (value: RepoOverride) => {
       if (repoFullName) {
         if (value === 'inherit') {
-          localStorage.removeItem(repoKey(repoFullName));
+          safeStorageRemove(repoKey(repoFullName));
         } else {
-          localStorage.setItem(repoKey(repoFullName), value);
+          safeStorageSet(repoKey(repoFullName), value);
         }
       }
       setRepoOverrideState(value);

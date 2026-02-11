@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { PRInput, PRData, PRFile } from '@/types';
+import { safeStorageGet } from '@/lib/safe-storage';
 
 const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
 const OAUTH_STORAGE_KEY = 'github_access_token';
@@ -34,8 +35,8 @@ export function useGitHub() {
     setError(null);
 
     try {
-      const oauthToken = localStorage.getItem(OAUTH_STORAGE_KEY) || '';
-      const appToken = localStorage.getItem(APP_TOKEN_STORAGE_KEY) || '';
+      const oauthToken = safeStorageGet(OAUTH_STORAGE_KEY) || '';
+      const appToken = safeStorageGet(APP_TOKEN_STORAGE_KEY) || '';
       const authToken = oauthToken || appToken || GITHUB_TOKEN;
       const headers: Record<string, string> = {
         'Accept': 'application/vnd.github.v3+json',
@@ -115,8 +116,8 @@ export function useGitHub() {
         files,
       };
     } catch (err) {
-      const oauthToken = localStorage.getItem(OAUTH_STORAGE_KEY) || '';
-      const appToken = localStorage.getItem(APP_TOKEN_STORAGE_KEY) || '';
+      const oauthToken = safeStorageGet(OAUTH_STORAGE_KEY) || '';
+      const appToken = safeStorageGet(APP_TOKEN_STORAGE_KEY) || '';
       const hasToken = Boolean(oauthToken || appToken || GITHUB_TOKEN);
       if (hasToken) {
         // User has a token — surface the real error, don't hide it

@@ -10,6 +10,7 @@ import { executeScratchpadToolCall } from '@/lib/scratchpad-tools';
 import { getSandboxStartMode } from '@/lib/sandbox-start-mode';
 import { browserToolEnabled } from '@/lib/feature-flags';
 import { getMistralModelName, getOllamaModelName } from '@/lib/providers';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const CONVERSATIONS_KEY = 'diff_conversations';
 const ACTIVE_CHAT_KEY = 'diff_active_chat';
@@ -62,20 +63,16 @@ function generateTitle(messages: ChatMessage[]): string {
 // --- localStorage helpers ---
 
 function saveConversations(convs: Record<string, Conversation>) {
-  try {
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(convs));
-  } catch {
-    // Ignore quota errors
-  }
+  safeStorageSet(CONVERSATIONS_KEY, JSON.stringify(convs));
 }
 
 function saveActiveChatId(id: string) {
-  localStorage.setItem(ACTIVE_CHAT_KEY, id);
+  safeStorageSet(ACTIVE_CHAT_KEY, id);
 }
 
 function getActiveRepoFullName(): string | null {
   try {
-    const stored = localStorage.getItem(ACTIVE_REPO_KEY);
+    const stored = safeStorageGet(ACTIVE_REPO_KEY);
     if (!stored) return null;
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed.full_name === 'string' && parsed.full_name.trim()) {
@@ -89,7 +86,7 @@ function getActiveRepoFullName(): string | null {
 
 function loadConversations(): Record<string, Conversation> {
   try {
-    const stored = localStorage.getItem(CONVERSATIONS_KEY);
+    const stored = safeStorageGet(CONVERSATIONS_KEY);
     if (stored) {
       const convs: Record<string, Conversation> = JSON.parse(stored);
       for (const id of Object.keys(convs)) {
@@ -120,7 +117,7 @@ function loadConversations(): Record<string, Conversation> {
 
   // Migration: check for old single-chat format
   try {
-    const oldHistory = localStorage.getItem(OLD_STORAGE_KEY);
+    const oldHistory = safeStorageGet(OLD_STORAGE_KEY);
     if (oldHistory) {
       const oldMessages: ChatMessage[] = JSON.parse(oldHistory);
       if (oldMessages.length > 0) {
@@ -138,7 +135,7 @@ function loadConversations(): Record<string, Conversation> {
         };
         saveConversations(migrated);
         saveActiveChatId(id);
-        localStorage.removeItem(OLD_STORAGE_KEY);
+        safeStorageRemove(OLD_STORAGE_KEY);
         return migrated;
       }
     }
@@ -150,7 +147,7 @@ function loadConversations(): Record<string, Conversation> {
 }
 
 function loadActiveChatId(conversations: Record<string, Conversation>): string {
-  const stored = localStorage.getItem(ACTIVE_CHAT_KEY);
+  const stored = safeStorageGet(ACTIVE_CHAT_KEY);
   if (stored && conversations[stored]) return stored;
   // Default to most recent conversation or empty
   const ids = Object.keys(conversations);

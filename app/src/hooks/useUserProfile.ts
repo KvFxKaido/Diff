@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { UserProfile } from '../types';
 import { USER_PROFILE_DEFAULTS } from '../types';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const STORAGE_KEY = 'push_user_profile';
 const MAX_BIO_LENGTH = 300;
@@ -11,7 +12,7 @@ const MAX_BIO_LENGTH = 300;
  */
 export function getUserProfile(): UserProfile {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = safeStorageGet(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       return { ...USER_PROFILE_DEFAULTS, ...parsed };
@@ -35,13 +36,13 @@ export function useUserProfile() {
       if (merged.bio.length > MAX_BIO_LENGTH) {
         merged.bio = merged.bio.slice(0, MAX_BIO_LENGTH);
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      safeStorageSet(STORAGE_KEY, JSON.stringify(merged));
       return merged;
     });
   }, []);
 
   const clearProfile = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    safeStorageRemove(STORAGE_KEY);
     setProfileState({ ...USER_PROFILE_DEFAULTS });
   }, []);
 

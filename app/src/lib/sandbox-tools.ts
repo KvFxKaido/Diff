@@ -36,6 +36,7 @@ import {
 import { runAuditor } from './auditor-agent';
 import { browserToolEnabled } from './feature-flags';
 import { recordBrowserMetric } from './browser-metrics';
+import { safeStorageGet } from './safe-storage';
 
 const OAUTH_STORAGE_KEY = 'github_access_token';
 const APP_TOKEN_STORAGE_KEY = 'github_app_token';
@@ -84,7 +85,7 @@ function formatSandboxError(error: string, context?: string): string {
 }
 
 function getGitHubAuthToken(): string {
-  return localStorage.getItem(OAUTH_STORAGE_KEY) || localStorage.getItem(APP_TOKEN_STORAGE_KEY) || GITHUB_TOKEN;
+  return safeStorageGet(OAUTH_STORAGE_KEY) || safeStorageGet(APP_TOKEN_STORAGE_KEY) || GITHUB_TOKEN;
 }
 
 function getGitHubHeaders(token: string): Record<string, string> {

@@ -1,5 +1,6 @@
 import type { AIProviderType, AIProviderConfig, AIModel, AgentRole } from '@/types';
 import { resetMistralAgent } from './orchestrator';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from './safe-storage';
 
 // Valid Ollama model names — these must exist on the Ollama server
 export const OLLAMA_DEFAULT_MODEL = 'gemini-3-flash-preview';
@@ -136,15 +137,11 @@ export function getModelForRole(
 const OLLAMA_MODEL_KEY = 'ollama_model';
 
 export function getOllamaModelName(): string {
-  try {
-    return localStorage.getItem(OLLAMA_MODEL_KEY) || OLLAMA_DEFAULT_MODEL;
-  } catch {
-    return OLLAMA_DEFAULT_MODEL;
-  }
+  return safeStorageGet(OLLAMA_MODEL_KEY) || OLLAMA_DEFAULT_MODEL;
 }
 
 export function setOllamaModelName(model: string): void {
-  localStorage.setItem(OLLAMA_MODEL_KEY, model.trim());
+  safeStorageSet(OLLAMA_MODEL_KEY, model.trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -154,15 +151,11 @@ export function setOllamaModelName(model: string): void {
 const MISTRAL_MODEL_KEY = 'mistral_model';
 
 export function getMistralModelName(): string {
-  try {
-    return localStorage.getItem(MISTRAL_MODEL_KEY) || MISTRAL_DEFAULT_MODEL;
-  } catch {
-    return MISTRAL_DEFAULT_MODEL;
-  }
+  return safeStorageGet(MISTRAL_MODEL_KEY) || MISTRAL_DEFAULT_MODEL;
 }
 
 export function setMistralModelName(model: string): void {
-  localStorage.setItem(MISTRAL_MODEL_KEY, model.trim());
+  safeStorageSet(MISTRAL_MODEL_KEY, model.trim());
   // Invalidate cached Mistral agent — it was created with the old model
   resetMistralAgent();
 }
@@ -176,19 +169,15 @@ const PREFERRED_PROVIDER_KEY = 'preferred_provider';
 export type PreferredProvider = 'moonshot' | 'ollama' | 'mistral';
 
 export function getPreferredProvider(): PreferredProvider | null {
-  try {
-    const stored = localStorage.getItem(PREFERRED_PROVIDER_KEY);
-    if (stored === 'moonshot' || stored === 'ollama' || stored === 'mistral') return stored;
-  } catch {
-    // SSR / restricted context
-  }
+  const stored = safeStorageGet(PREFERRED_PROVIDER_KEY);
+  if (stored === 'moonshot' || stored === 'ollama' || stored === 'mistral') return stored;
   return null;
 }
 
 export function setPreferredProvider(provider: PreferredProvider): void {
-  localStorage.setItem(PREFERRED_PROVIDER_KEY, provider);
+  safeStorageSet(PREFERRED_PROVIDER_KEY, provider);
 }
 
 export function clearPreferredProvider(): void {
-  localStorage.removeItem(PREFERRED_PROVIDER_KEY);
+  safeStorageRemove(PREFERRED_PROVIDER_KEY);
 }

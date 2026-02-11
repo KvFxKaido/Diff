@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { RepoWithActivity, RepoSummary, RepoActivity } from '@/types';
+import { safeStorageGet, safeStorageSet } from '@/lib/safe-storage';
 
 const GITHUB_TOKEN = import.meta.env.VITE_GITHUB_TOKEN || '';
 const OAUTH_STORAGE_KEY = 'github_access_token';
@@ -9,8 +10,8 @@ const SYNC_STORAGE_KEY = 'repo_last_sync';
 const PUSHED_STORAGE_KEY = 'repo_last_pushed';
 
 function getAuthHeaders(): Record<string, string> {
-  const oauthToken = localStorage.getItem(OAUTH_STORAGE_KEY) || '';
-  const appToken = localStorage.getItem(APP_TOKEN_STORAGE_KEY) || '';
+  const oauthToken = safeStorageGet(OAUTH_STORAGE_KEY) || '';
+  const appToken = safeStorageGet(APP_TOKEN_STORAGE_KEY) || '';
   const authToken = oauthToken || appToken || GITHUB_TOKEN;
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github.v3+json',
@@ -23,7 +24,18 @@ function getAuthHeaders(): Record<string, string> {
 
 function getStoredPushedAt(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(PUSHED_STORAGE_KEY) || '{}');
+    const raw = safeStorageGet(PUSHED_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+
+    const map: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string') {
+        map[key] = value;
+      }
+    }
+    return map;
   } catch {
     return {};
   }
@@ -34,7 +46,7 @@ function storePushedAt(repos: RepoSummary[]) {
   for (const repo of repos) {
     map[repo.full_name] = repo.pushed_at;
   }
-  localStorage.setItem(PUSHED_STORAGE_KEY, JSON.stringify(map));
+  safeStorageSet(PUSHED_STORAGE_KEY, JSON.stringify(map));
 }
 
 // Mock repos for demo mode
@@ -182,7 +194,7 @@ export function useRepos() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() =>
-    localStorage.getItem(SYNC_STORAGE_KEY),
+    safeStorageGet(SYNC_STORAGE_KEY),
   );
   const [userInfo, setUserInfo] = useState<{ login: string; avatar_url: string } | null>(null);
 
@@ -192,9 +204,9 @@ export function useRepos() {
 
     try {
       const headers = getAuthHeaders();
-      const oauthToken = localStorage.getItem(OAUTH_STORAGE_KEY) || '';
-      const appToken = localStorage.getItem(APP_TOKEN_STORAGE_KEY) || '';
-      const hasInstallationId = Boolean(localStorage.getItem(APP_INSTALLATION_ID_KEY));
+      const oauthToken = safeStorageGet(OAUTH_STORAGE_KEY) || '';
+      const appToken = safeStorageGet(APP_TOKEN_STORAGE_KEY) || '';
+      const hasInstallationId = Boolean(safeStorageGet(APP_INSTALLATION_ID_KEY));
       const isGitHubAppAuth = Boolean(!oauthToken && appToken && hasInstallationId);
 
       if (!headers['Authorization']) {
@@ -206,7 +218,7 @@ export function useRepos() {
           activity: { ...r.activity, last_synced: now },
         })));
         setLastSyncTime(now);
-        localStorage.setItem(SYNC_STORAGE_KEY, now);
+        safeStorageSet(SYNC_STORAGE_KEY, now);
         setUserInfo({ login: 'demo-user', avatar_url: '' });
         return;
       }
@@ -290,11 +302,11 @@ export function useRepos() {
       storePushedAt(summaries);
       setRepos(reposWithActivity);
       setLastSyncTime(now);
-      localStorage.setItem(SYNC_STORAGE_KEY, now);
+      safeStorageSet(SYNC_STORAGE_KEY, now);
     } catch (err) {
       const hasAnyToken = Boolean(
-        localStorage.getItem(OAUTH_STORAGE_KEY) ||
-        localStorage.getItem(APP_TOKEN_STORAGE_KEY) ||
+        safeStorageGet(OAUTH_STORAGE_KEY) ||
+        safeStorageGet(APP_TOKEN_STORAGE_KEY) ||
         GITHUB_TOKEN
       );
       if (hasAnyToken) {
@@ -310,7 +322,7 @@ export function useRepos() {
         activity: { ...r.activity, last_synced: now },
       })));
       setLastSyncTime(now);
-      localStorage.setItem(SYNC_STORAGE_KEY, now);
+      safeStorageSet(SYNC_STORAGE_KEY, now);
       setUserInfo({ login: 'demo-user', avatar_url: '' });
     } finally {
       setLoading(false);

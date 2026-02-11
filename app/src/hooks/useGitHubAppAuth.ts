@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitHubUser } from '../types';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 const INSTALLATION_ID_KEY = 'github_app_installation_id';
 const TOKEN_KEY = 'github_app_token';
@@ -135,11 +136,11 @@ async function validateToken(token: string): Promise<GitHubUser | null> {
 
 export function useGitHubAppAuth(): UseGitHubAppAuth {
   const [installationId, setInstallationId] = useState(
-    () => localStorage.getItem(INSTALLATION_ID_KEY) || ''
+    () => safeStorageGet(INSTALLATION_ID_KEY) || ''
   );
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
+  const [token, setToken] = useState(() => safeStorageGet(TOKEN_KEY) || '');
   const [, setTokenExpiry] = useState(
-    () => localStorage.getItem(TOKEN_EXPIRY_KEY) || ''
+    () => safeStorageGet(TOKEN_EXPIRY_KEY) || ''
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,8 +162,8 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     refreshTimeoutRef.current = setTimeout(async () => {
       try {
         const data = await fetchAppToken(instId);
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(TOKEN_EXPIRY_KEY, data.expires_at);
+        safeStorageSet(TOKEN_KEY, data.token);
+        safeStorageSet(TOKEN_EXPIRY_KEY, data.expires_at);
         setToken(data.token);
         setTokenExpiry(data.expires_at);
         scheduleRefresh(data.expires_at, instId);
@@ -182,15 +183,15 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     // Persist installation ID independently from token state so users don't lose it
     // when token exchange fails temporarily (network/proxy/allowlist issues).
     if (normalizedInstId) {
-      localStorage.setItem(INSTALLATION_ID_KEY, normalizedInstId);
+      safeStorageSet(INSTALLATION_ID_KEY, normalizedInstId);
       setInstallationId(normalizedInstId);
     }
 
     try {
       const data = await fetchAppToken(normalizedInstId);
 
-      localStorage.setItem(TOKEN_KEY, data.token);
-      localStorage.setItem(TOKEN_EXPIRY_KEY, data.expires_at);
+      safeStorageSet(TOKEN_KEY, data.token);
+      safeStorageSet(TOKEN_EXPIRY_KEY, data.expires_at);
 
       setToken(data.token);
       setTokenExpiry(data.expires_at);
@@ -221,9 +222,9 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     try {
       const data = await fetchAppOAuth(code);
 
-      localStorage.setItem(INSTALLATION_ID_KEY, data.installation_id);
-      localStorage.setItem(TOKEN_KEY, data.token);
-      localStorage.setItem(TOKEN_EXPIRY_KEY, data.expires_at);
+      safeStorageSet(INSTALLATION_ID_KEY, data.installation_id);
+      safeStorageSet(TOKEN_KEY, data.token);
+      safeStorageSet(TOKEN_EXPIRY_KEY, data.expires_at);
 
       setInstallationId(data.installation_id);
       setToken(data.token);
@@ -269,9 +270,9 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     if (mountInitialized.current) return;
     mountInitialized.current = true;
 
-    const storedInstId = localStorage.getItem(INSTALLATION_ID_KEY);
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    const storedExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    const storedInstId = safeStorageGet(INSTALLATION_ID_KEY);
+    const storedToken = safeStorageGet(TOKEN_KEY);
+    const storedExpiry = safeStorageGet(TOKEN_EXPIRY_KEY);
 
     if (!storedInstId) return;
 
@@ -346,9 +347,9 @@ export function useGitHubAppAuth(): UseGitHubAppAuth {
     if (refreshTimeoutRef.current) {
       clearTimeout(refreshTimeoutRef.current);
     }
-    localStorage.removeItem(INSTALLATION_ID_KEY);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    safeStorageRemove(INSTALLATION_ID_KEY);
+    safeStorageRemove(TOKEN_KEY);
+    safeStorageRemove(TOKEN_EXPIRY_KEY);
     setInstallationId('');
     setToken('');
     setTokenExpiry('');

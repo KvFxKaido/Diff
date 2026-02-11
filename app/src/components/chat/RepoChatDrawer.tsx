@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Box,
   Check,
+  ChevronDown,
   ChevronRight,
   Cpu,
   FolderCog,
@@ -17,8 +18,17 @@ import {
   Trash2,
   UserRound,
   X,
+  Loader2,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ActiveRepo, Conversation, RepoWithActivity } from '@/types';
 
 interface RepoChatDrawerProps {
@@ -39,6 +49,10 @@ interface RepoChatDrawerProps {
   currentBranch?: string;
   defaultBranch?: string;
   setCurrentBranch?: (branch: string) => void;
+  availableBranches?: { name: string; isDefault: boolean; isProtected: boolean }[];
+  branchesLoading?: boolean;
+  branchesError?: string | null;
+  onRefreshBranches?: () => void;
 }
 
 const EMPTY_CHATS: Conversation[] = [];
@@ -73,6 +87,10 @@ export function RepoChatDrawer({
   currentBranch,
   defaultBranch,
   setCurrentBranch,
+  availableBranches = [],
+  branchesLoading = false,
+  branchesError = null,
+  onRefreshBranches,
 }: RepoChatDrawerProps) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'history' | 'settings'>('history');
@@ -80,6 +98,20 @@ export function RepoChatDrawer({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+
+  const drawerBranchOptions = useMemo(() => {
+    if (!currentBranch) return availableBranches;
+    if (availableBranches.some((b) => b.name === currentBranch)) return availableBranches;
+    return [
+      {
+        name: currentBranch,
+        isDefault: currentBranch === (defaultBranch || 'main'),
+        isProtected: false,
+      },
+      ...availableBranches,
+    ];
+  }, [availableBranches, currentBranch, defaultBranch]);
 
   const chatsByRepo = useMemo(() => {
     const grouped = new Map<string, Conversation[]>();
@@ -167,6 +199,7 @@ export function RepoChatDrawer({
       setPanel('history');
       setSearchQuery('');
       cancelRename();
+      setBranchMenuOpen(false);
     }
   };
 
@@ -385,6 +418,98 @@ export function RepoChatDrawer({
 
                       {isExpanded && (
                         <div className="space-y-1 px-2 pb-2">
+                          {isActiveRepo && setCurrentBranch && (
+                            <DropdownMenu
+                              open={branchMenuOpen}
+                              onOpenChange={(open) => {
+                                setBranchMenuOpen(open);
+                                if (open && onRefreshBranches && !branchesLoading && drawerBranchOptions.length === 0) {
+                                  onRefreshBranches();
+                                }
+                              }}
+                            >
+                              <DropdownMenuTrigger className="mx-1 mb-1 flex h-8 w-[calc(100%-0.5rem)] items-center gap-1 rounded-lg border border-push-edge bg-[#080b10]/95 px-2.5 text-left text-xs text-push-fg-secondary transition-colors hover:border-push-edge-hover hover:bg-push-surface-raised">
+                                <GitBranch className="h-3 w-3 text-push-fg-dim" />
+                                <span className="min-w-0 flex-1 truncate">{currentBranch || defaultBranch || 'main'}</span>
+                                <ChevronDown className={`h-3 w-3 text-push-fg-dim transition-transform ${branchMenuOpen ? 'rotate-180' : ''}`} />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="start"
+                                sideOffset={6}
+                                className="w-[230px] rounded-xl border border-push-edge bg-push-grad-card shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
+                              >
+                                <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-push-fg-dim">
+                                  Switch Branch
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator className="bg-push-edge" />
+
+                                {branchesLoading && (
+                                  <DropdownMenuItem disabled className="mx-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-push-fg-dim">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Loading branches...
+                                  </DropdownMenuItem>
+                                )}
+
+                                {!branchesLoading && branchesError && (
+                                  <>
+                                    <DropdownMenuItem disabled className="mx-1 rounded-lg px-3 py-2 text-xs text-red-400">
+                                      Failed to load branches
+                                    </DropdownMenuItem>
+                                    {onRefreshBranches && (
+                                      <DropdownMenuItem
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          onRefreshBranches();
+                                        }}
+                                        className="mx-1 rounded-lg px-3 py-2 text-xs text-push-link hover:bg-[#0d1119]"
+                                      >
+                                        Retry
+                                      </DropdownMenuItem>
+                                    )}
+                                  </>
+                                )}
+
+                                {!branchesLoading && !branchesError && drawerBranchOptions.length === 0 && (
+                                  <DropdownMenuItem disabled className="mx-1 rounded-lg px-3 py-2 text-xs text-push-fg-dim">
+                                    No branches found
+                                  </DropdownMenuItem>
+                                )}
+
+                                {!branchesLoading && !branchesError && drawerBranchOptions.map((branch) => {
+                                  const isActiveBranch = branch.name === currentBranch;
+                                  return (
+                                    <DropdownMenuItem
+                                      key={branch.name}
+                                      onSelect={() => {
+                                        if (branch.name !== currentBranch) {
+                                          setCurrentBranch(branch.name);
+                                        }
+                                      }}
+                                      className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
+                                        isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
+                                      }`}
+                                    >
+                                      <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
+                                        {branch.name}
+                                      </span>
+                                      {branch.isDefault && (
+                                        <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
+                                          default
+                                        </span>
+                                      )}
+                                      {branch.isProtected && (
+                                        <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
+                                          protected
+                                        </span>
+                                      )}
+                                      {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
+                                    </DropdownMenuItem>
+                                  );
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+
                           {chats.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-push-edge px-2.5 py-2 text-[11px] text-push-fg-muted">
                               No chats yet

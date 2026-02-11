@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/lib/safe-storage';
 
 // --- Types ---
 
@@ -29,11 +30,29 @@ const COST_PER_1M_OUTPUT = 0.60; // $0.60 per 1M output tokens
 // --- Storage helpers ---
 
 function loadUsageLog(): UsageEntry[] {
+  const stored = safeStorageGet(USAGE_KEY);
+  return parseUsageLog(stored);
+}
+
+export function parseUsageLog(raw: string | null): UsageEntry[] {
+  if (!raw) return [];
   try {
-    const stored = localStorage.getItem(USAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (entry): entry is UsageEntry =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof entry.timestamp === 'number' &&
+        Number.isFinite(entry.timestamp) &&
+        typeof entry.model === 'string' &&
+        typeof entry.inputTokens === 'number' &&
+        Number.isFinite(entry.inputTokens) &&
+        typeof entry.outputTokens === 'number' &&
+        Number.isFinite(entry.outputTokens) &&
+        typeof entry.totalTokens === 'number' &&
+        Number.isFinite(entry.totalTokens),
+    );
   } catch {
     // Ignore parse errors
   }
@@ -41,13 +60,9 @@ function loadUsageLog(): UsageEntry[] {
 }
 
 function saveUsageLog(entries: UsageEntry[]) {
-  try {
-    // Keep only the most recent entries
-    const trimmed = entries.slice(-MAX_ENTRIES);
-    localStorage.setItem(USAGE_KEY, JSON.stringify(trimmed));
-  } catch {
-    // Ignore quota errors
-  }
+  // Keep only the most recent entries
+  const trimmed = entries.slice(-MAX_ENTRIES);
+  safeStorageSet(USAGE_KEY, JSON.stringify(trimmed));
 }
 
 // --- Stats calculation ---
@@ -138,7 +153,7 @@ export function useUsageTracking() {
 
   const clearUsage = useCallback(() => {
     setEntries([]);
-    localStorage.removeItem(USAGE_KEY);
+    safeStorageRemove(USAGE_KEY);
   }, []);
 
   const todayCost = estimateCost(stats.today.inputTokens, stats.today.outputTokens);

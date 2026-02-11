@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, Plus } from 'lucide-react';
+import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, Plus, ChevronDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
@@ -20,7 +20,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useProtectMain } from '@/hooks/useProtectMain';
 import { buildWorkspaceContext, sanitizeProjectInstructions } from '@/lib/workspace-context';
 import { readFromSandbox, execInSandbox, downloadFromSandbox, writeToSandbox } from '@/lib/sandbox-client';
-import { fetchProjectInstructions } from '@/lib/github-tools';
+import { fetchProjectInstructions, fetchRepoBranches } from '@/lib/github-tools';
 import { getSandboxStartMode, setSandboxStartMode, type SandboxStartMode } from '@/lib/sandbox-start-mode';
 import {
   createSnapshot,
@@ -44,6 +44,14 @@ import type { AppScreen, RepoWithActivity, SandboxStateCardData } from '@/types'
 import { SettingsSheet } from '@/components/SettingsSheet';
 import { BranchCreateSheet } from '@/components/chat/BranchCreateSheet';
 import { MergeFlowSheet } from '@/components/chat/MergeFlowSheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import './App.css';
 
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
@@ -236,10 +244,29 @@ function App() {
   // Branch lifecycle controls (sheets wired in Tasks 5 & 6)
   const [showBranchCreate, setShowBranchCreate] = useState(false);
   const [showMergeFlow, setShowMergeFlow] = useState(false);
+  const [repoBranches, setRepoBranches] = useState<{ name: string; isDefault: boolean; isProtected: boolean }[]>([]);
+  const [repoBranchesLoading, setRepoBranchesLoading] = useState(false);
+  const [repoBranchesError, setRepoBranchesError] = useState<string | null>(null);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const branchFetchSeqRef = useRef(0);
 
   // Derived branch values
+  const activeRepoFullName = activeRepo?.full_name || null;
   const currentBranch = activeRepo?.current_branch || activeRepo?.default_branch || 'main';
   const isOnMain = currentBranch === (activeRepo?.default_branch || 'main');
+  const displayBranches = useMemo(() => {
+    if (!activeRepo) return repoBranches;
+    if (!currentBranch) return repoBranches;
+    if (repoBranches.some((b) => b.name === currentBranch)) return repoBranches;
+    return [
+      {
+        name: currentBranch,
+        isDefault: currentBranch === activeRepo.default_branch,
+        isProtected: false,
+      },
+      ...repoBranches,
+    ];
+  }, [activeRepo, currentBranch, repoBranches]);
 
   // Sandbox state for settings display
   const [sandboxState, setSandboxState] = useState<SandboxStateCardData | null>(null);
@@ -290,6 +317,37 @@ function App() {
       setMistralModelsLoading(false);
     }
   }, [hasMistralKey, mistralModelsLoading]);
+
+  const loadRepoBranches = useCallback(async (repoFullName: string) => {
+    const seq = ++branchFetchSeqRef.current;
+    setRepoBranchesLoading(true);
+    setRepoBranchesError(null);
+    try {
+      const { branches } = await fetchRepoBranches(repoFullName, 500);
+      if (seq !== branchFetchSeqRef.current) return;
+      setRepoBranches(branches);
+    } catch (err) {
+      if (seq !== branchFetchSeqRef.current) return;
+      setRepoBranches([]);
+      setRepoBranchesError(err instanceof Error ? err.message : 'Failed to load branches');
+    } finally {
+      if (seq === branchFetchSeqRef.current) {
+        setRepoBranchesLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeRepoFullName || isSandboxMode) {
+      branchFetchSeqRef.current++;
+      setRepoBranches([]);
+      setRepoBranchesError(null);
+      setRepoBranchesLoading(false);
+      setBranchMenuOpen(false);
+      return;
+    }
+    void loadRepoBranches(activeRepoFullName);
+  }, [activeRepoFullName, isSandboxMode, loadRepoBranches]);
 
   useEffect(() => {
     if (hasOllamaKey && ollamaModels.length === 0 && !ollamaModelsLoading) {
@@ -1078,6 +1136,16 @@ function App() {
               currentBranch={activeRepo?.current_branch || activeRepo?.default_branch}
               defaultBranch={activeRepo?.default_branch}
               setCurrentBranch={setCurrentBranch}
+              availableBranches={displayBranches}
+              branchesLoading={repoBranchesLoading}
+              branchesError={repoBranchesError}
+              onRefreshBranches={
+                activeRepo
+                  ? () => {
+                      void loadRepoBranches(activeRepo.full_name);
+                    }
+                  : undefined
+              }
             />
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold text-[#f5f7ff]">
@@ -1090,12 +1158,93 @@ function App() {
           </div>
           {/* Branch badge — shown when a repo is active and not in sandbox mode */}
           {activeRepo && !isSandboxMode && (
-            <div className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 px-2 py-1 backdrop-blur-xl">
-              <GitBranch className="h-3 w-3 text-[#5f6b80]" />
-              <span className="max-w-[100px] truncate text-[10px] font-medium text-[#8b96aa]">
-                {currentBranch}
-              </span>
-            </div>
+            <DropdownMenu
+              open={branchMenuOpen}
+              onOpenChange={(open) => {
+                setBranchMenuOpen(open);
+                if (open && !repoBranchesLoading && displayBranches.length === 0) {
+                  void loadRepoBranches(activeRepo.full_name);
+                }
+              }}
+            >
+              <DropdownMenuTrigger className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 px-2 py-1 backdrop-blur-xl transition-colors hover:border-[#31425a] hover:bg-[#0d1119]">
+                <GitBranch className="h-3 w-3 text-[#5f6b80]" />
+                <span className="max-w-[100px] truncate text-[10px] font-medium text-[#8b96aa]">
+                  {currentBranch}
+                </span>
+                <ChevronDown className={`h-3 w-3 text-[#5f6b80] transition-transform ${branchMenuOpen ? 'rotate-180' : ''}`} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                sideOffset={8}
+                className="w-[240px] rounded-xl border border-push-edge bg-push-grad-card shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
+              >
+                <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-push-fg-dim">
+                  Switch Branch
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-push-edge" />
+
+                {repoBranchesLoading && (
+                  <DropdownMenuItem disabled className="mx-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-push-fg-dim">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Loading branches...
+                  </DropdownMenuItem>
+                )}
+
+                {!repoBranchesLoading && repoBranchesError && (
+                  <>
+                    <DropdownMenuItem disabled className="mx-1 rounded-lg px-3 py-2 text-xs text-red-400">
+                      Failed to load branches
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        void loadRepoBranches(activeRepo.full_name);
+                      }}
+                      className="mx-1 rounded-lg px-3 py-2 text-xs text-push-link hover:bg-[#0d1119]"
+                    >
+                      Retry
+                    </DropdownMenuItem>
+                  </>
+                )}
+
+                {!repoBranchesLoading && !repoBranchesError && displayBranches.length === 0 && (
+                  <DropdownMenuItem disabled className="mx-1 rounded-lg px-3 py-2 text-xs text-push-fg-dim">
+                    No branches found
+                  </DropdownMenuItem>
+                )}
+
+                {!repoBranchesLoading && !repoBranchesError && displayBranches.map((branch) => {
+                  const isActiveBranch = branch.name === currentBranch;
+                  return (
+                    <DropdownMenuItem
+                      key={branch.name}
+                      onSelect={() => {
+                        if (!isActiveBranch) setCurrentBranch(branch.name);
+                      }}
+                      className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
+                        isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
+                      }`}
+                    >
+                      <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
+                        {branch.name}
+                      </span>
+                      {branch.isDefault && (
+                        <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
+                          default
+                        </span>
+                      )}
+                      {branch.isProtected && (
+                        <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
+                          protected
+                        </span>
+                      )}
+                      {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {isSandboxMode && (
               <>
