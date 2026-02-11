@@ -68,7 +68,7 @@ export function RepoAndChatSelector({
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className="max-h-[70vh] w-[300px] overflow-y-auto rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#05070b_100%)] shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
+        className="max-h-[70dvh] w-[300px] overflow-y-auto rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#05070b_100%)] shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
       >
         {/* --- REPOS section --- */}
         {repos.length > 0 && (
