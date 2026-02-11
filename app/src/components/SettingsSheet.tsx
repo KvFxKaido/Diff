@@ -154,25 +154,28 @@ export function SettingsSheet({
 }: SettingsSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side={side} className="border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] flex flex-col overflow-hidden">
-        <SheetHeader className="shrink-0">
+      <SheetContent side={side} className="border-[#151b26] bg-push-grad-panel flex flex-col overflow-hidden">
+        {/* Subtle top glow */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/[0.03] to-transparent" />
+
+        <SheetHeader className="relative shrink-0">
           <SheetTitle className="text-push-fg">Settings</SheetTitle>
           <SheetDescription className="text-push-fg-secondary">
             Connect GitHub and configure your workspace.
           </SheetDescription>
         </SheetHeader>
 
-        {/* Tab bar */}
-        <div className="flex gap-1 px-4 pt-1 pb-2 shrink-0">
+        {/* Tab bar — matches WorkspacePanel */}
+        <div className="flex gap-1.5 px-4 pt-1 pb-2.5 shrink-0">
           {([['you', 'You'], ['workspace', 'Workspace'], ['ai', 'AI']] as const).map(([key, label]) => (
             <button
               key={key}
               type="button"
               onClick={() => setSettingsTab(key)}
-              className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex-1 min-h-[40px] rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
                 settingsTab === key
-                  ? 'bg-[#101621] text-push-fg'
-                  : 'text-push-fg-dim hover:text-[#d1d8e6]'
+                  ? 'border border-push-edge-hover bg-[#0d1119] text-push-fg shadow-push-sm'
+                  : 'border border-transparent text-push-fg-dim hover:text-push-fg-secondary hover:bg-[#080b10]/80'
               }`}
             >
               {label}
@@ -267,7 +270,7 @@ export function SettingsSheet({
                               }
                             }}
                             disabled={!auth.installIdInput.trim() || auth.appLoading}
-                            className="text-push-link hover:text-[#86ccff] flex-1"
+                            className="text-push-link hover:text-push-fg flex-1"
                           >
                             {auth.appLoading ? 'Connecting...' : 'Connect'}
                           </Button>
@@ -275,7 +278,7 @@ export function SettingsSheet({
                             variant="ghost"
                             size="sm"
                             onClick={() => auth.setShowInstallIdInput(false)}
-                            className="text-push-fg-dim hover:text-[#d1d8e6]"
+                            className="text-push-fg-dim hover:text-push-fg-secondary"
                           >
                             Cancel
                           </Button>
@@ -293,7 +296,7 @@ export function SettingsSheet({
                             auth.connectApp();
                             onOpenChange(false);
                           }}
-                          className="text-push-link hover:text-[#86ccff] w-full justify-start"
+                          className="text-push-link hover:text-push-fg w-full justify-start"
                         >
                           ⬆️ Connect with GitHub
                         </Button>
@@ -304,7 +307,7 @@ export function SettingsSheet({
                             auth.installApp();
                             onOpenChange(false);
                           }}
-                          className="text-push-fg-dim hover:text-[#d1d8e6] w-full justify-start text-xs"
+                          className="text-push-fg-dim hover:text-push-fg-secondary w-full justify-start text-xs"
                         >
                           Install GitHub App (first time)
                         </Button>
@@ -312,7 +315,7 @@ export function SettingsSheet({
                           variant="ghost"
                           size="sm"
                           onClick={() => auth.setShowInstallIdInput(true)}
-                          className="text-push-fg-dim hover:text-[#d1d8e6] w-full justify-start text-xs"
+                          className="text-push-fg-dim hover:text-push-fg-secondary w-full justify-start text-xs"
                         >
                           Enter installation ID manually
                         </Button>
@@ -329,7 +332,7 @@ export function SettingsSheet({
                               <button
                                 type="button"
                                 onClick={auth.copyAllowlistCommand}
-                                className="rounded border border-[#2a3447] px-2 py-0.5 text-[10px] text-push-fg-secondary hover:text-push-fg hover:border-[#31425a]"
+                                className="rounded border border-push-edge px-2 py-0.5 text-[10px] text-push-fg-secondary hover:text-push-fg hover:border-push-edge-hover"
                               >
                                 Copy
                               </button>
@@ -524,7 +527,7 @@ export function SettingsSheet({
                 <div className="flex items-center gap-1.5">
                   <div className={`h-2 w-2 rounded-full ${
                     workspace.sandboxStatus === 'ready' ? 'bg-emerald-500' :
-                    workspace.sandboxStatus === 'creating' ? 'bg-[#f59e0b] animate-pulse' :
+                    workspace.sandboxStatus === 'creating' ? 'bg-amber-500 animate-pulse' :
                     workspace.sandboxStatus === 'error' ? 'bg-red-500' : 'bg-push-fg-dim'
                   }`} />
                   <span className="text-xs text-push-fg-secondary">
@@ -540,13 +543,13 @@ export function SettingsSheet({
                   <div className="px-3 py-2 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <GitBranch className="h-3.5 w-3.5 text-push-fg-muted" />
-                      <span className="text-xs text-[#e4e4e7] font-mono truncate">{workspace.sandboxState.branch}</span>
+                      <span className="text-xs text-push-fg-secondary font-mono truncate">{workspace.sandboxState.branch}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${
                         workspace.sandboxState.changedFiles > 0
-                          ? 'bg-[#f59e0b]/15 text-[#f59e0b]'
-                          : 'bg-[#22c55e]/15 text-[#22c55e]'
+                          ? 'bg-amber-500/15 text-amber-500'
+                          : 'bg-emerald-500/15 text-emerald-500'
                       }`}>
                         {workspace.sandboxState.changedFiles > 0 ? `${workspace.sandboxState.changedFiles} changed` : 'clean'}
                       </span>
@@ -554,7 +557,7 @@ export function SettingsSheet({
                         type="button"
                         onClick={() => workspace.sandboxId && workspace.fetchSandboxState(workspace.sandboxId)}
                         disabled={workspace.sandboxStateLoading}
-                        className="inline-flex items-center gap-1 rounded border border-[#2a3447] px-1.5 py-0.5 text-[10px] text-push-fg-secondary hover:text-push-fg hover:border-[#31425a] disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded border border-push-edge px-1.5 py-0.5 text-[10px] text-push-fg-secondary hover:text-push-fg hover:border-push-edge-hover disabled:opacity-50"
                         title="Refresh sandbox state"
                       >
                         {workspace.sandboxStateLoading ? (
@@ -574,7 +577,7 @@ export function SettingsSheet({
                         <span>Untracked: <span className="text-push-fg-secondary">{workspace.sandboxState.untrackedFiles}</span></span>
                       </div>
                       {workspace.sandboxState.preview.length > 0 && (
-                        <div className="rounded border border-[#1f1f23] bg-[#0a0a0c] p-1.5 space-y-0.5">
+                        <div className="rounded border border-push-edge bg-push-surface p-1.5 space-y-0.5">
                           {workspace.sandboxState.preview.map((line, idx) => (
                             <div key={`${line}-${idx}`} className="text-[10px] text-push-fg-secondary font-mono truncate">
                               {line}

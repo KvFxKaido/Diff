@@ -23,7 +23,7 @@ export function CommitReviewCard({ data, messageId, cardIndex, onAction }: Commi
   const isBusy = isApproved || isPushing;
 
   return (
-    <div className="my-2.5 max-w-full overflow-hidden rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)] shadow-push-card">
+    <div className="my-2.5 max-w-full overflow-hidden rounded-xl border border-push-edge bg-push-grad-card shadow-push-card">
       {/* Header */}
       <div className={`px-3 py-2.5 flex items-center gap-2 ${
         isCommitted ? 'bg-[#22c55e]/5' :

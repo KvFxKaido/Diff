@@ -261,7 +261,7 @@ export function ChatInput({
 
   return (
     <div className="safe-area-bottom sticky bottom-0 z-10 px-3 pb-3">
-      <div className="relative overflow-hidden rounded-[24px] border border-[#171c25]/90 bg-[linear-gradient(180deg,#0a0d13_0%,#04060a_100%)] shadow-[0_12px_40px_rgba(0,0,0,0.55),0_4px_12px_rgba(0,0,0,0.25)] backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-[24px] border border-[#171c25]/90 bg-push-grad-input shadow-[0_12px_40px_rgba(0,0,0,0.55),0_4px_12px_rgba(0,0,0,0.25)] backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-white/[0.03] to-transparent" />
 
         {/* Attachment preview */}
@@ -333,7 +333,7 @@ export function ChatInput({
                   side="top"
                   align="start"
                   sideOffset={10}
-                  className="w-[250px] rounded-xl border border-[#1f2531] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] p-2.5 text-[#d7deeb] shadow-[0_12px_36px_rgba(0,0,0,0.55),0_4px_12px_rgba(0,0,0,0.25)] animate-scale-in"
+                  className="w-[250px] rounded-xl border border-[#1f2531] bg-push-grad-panel p-2.5 text-[#d7deeb] shadow-[0_12px_36px_rgba(0,0,0,0.55),0_4px_12px_rgba(0,0,0,0.25)] animate-scale-in"
                 >
                   <div className="space-y-2.5 px-1 py-1">
                     <div className="rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-1.5">

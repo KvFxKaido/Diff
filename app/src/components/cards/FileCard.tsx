@@ -7,7 +7,7 @@ export function FileCard({ data }: { data: FileCardData }) {
   const lineCount = data.content.split('\n').length;
 
   return (
-    <div className="my-2.5 max-w-full overflow-hidden rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)] shadow-push-card">
+    <div className="my-2.5 max-w-full overflow-hidden rounded-xl border border-push-edge bg-push-grad-card shadow-push-card">
       {/* Header */}
       <button
         onClick={() => setExpanded((e) => !e)}

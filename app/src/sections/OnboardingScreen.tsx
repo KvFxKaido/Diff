@@ -51,7 +51,7 @@ export function OnboardingScreen({
       <div className="w-full max-w-sm">
         {/* Logo + tagline */}
         <div className="text-center mb-10">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#1e2634] bg-[linear-gradient(180deg,#0d1119_0%,#070a10_100%)] shadow-push-lg animate-fade-in-up">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[#1e2634] bg-push-grad-icon shadow-push-lg animate-fade-in-up">
             <svg
               width="22"
               height="22"

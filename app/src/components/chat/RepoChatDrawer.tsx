@@ -172,7 +172,7 @@ export function RepoChatDrawer({
     const messageCount = chat.messages.filter((m) => !m.isToolResult).length;
 
     return (
-      <div key={chat.id} className={`flex items-center gap-1.5 rounded-lg ${isActiveChat ? 'bg-[#121a29]' : 'hover:bg-[#0d1119]'}`}>
+      <div key={chat.id} className={`flex items-center gap-1.5 rounded-lg ${isActiveChat ? 'bg-push-surface-raised' : 'hover:bg-push-surface-raised'}`}>
         {isEditing ? (
           <form
             onSubmit={(e) => {
@@ -194,7 +194,7 @@ export function RepoChatDrawer({
                   cancelRename();
                 }
               }}
-              className="h-7 w-full rounded-md border border-[#2a3447] bg-[#05070b] px-2 text-[12px] text-[#f5f7ff] outline-none placeholder:text-[#5f6b80] focus:border-[#3d5579]"
+              className="h-7 w-full rounded-md border border-push-edge bg-push-surface px-2 text-[12px] text-push-fg outline-none placeholder:text-push-fg-dim focus:border-push-sky/50"
               placeholder="Chat name"
               aria-label="Rename chat"
             />
@@ -211,7 +211,7 @@ export function RepoChatDrawer({
                 e.stopPropagation();
                 cancelRename();
               }}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8b96aa] transition-colors hover:bg-[#1a1f2b] hover:text-[#d7deeb]"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-push-fg-muted transition-colors hover:bg-push-surface-raised hover:text-push-fg-secondary"
               aria-label="Cancel rename"
             >
               <X className="h-3.5 w-3.5" />
@@ -223,10 +223,10 @@ export function RepoChatDrawer({
               onClick={() => openChat(chat.id, repo)}
               className="min-w-0 flex-1 px-2.5 py-2 text-left"
             >
-              <p className={`truncate text-[12px] ${isActiveChat ? 'text-[#f5f7ff]' : 'text-[#c5cfde]'}`}>
+              <p className={`truncate text-[12px] ${isActiveChat ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
                 {chat.title}
               </p>
-              <p className="mt-0.5 text-[10px] text-[#8b96aa]">
+              <p className="mt-0.5 text-[10px] text-push-fg-muted">
                 {messageCount} msg{messageCount !== 1 ? 's' : ''} · {timeAgo(chat.lastMessageAt)}
               </p>
             </button>
@@ -235,7 +235,7 @@ export function RepoChatDrawer({
                 e.stopPropagation();
                 startRename(chat);
               }}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8b96aa] transition-colors hover:bg-[#1a1f2b] hover:text-[#d7deeb]"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-push-fg-muted transition-colors hover:bg-push-surface-raised hover:text-push-fg-secondary"
               aria-label={`Rename ${chat.title}`}
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -245,7 +245,7 @@ export function RepoChatDrawer({
                 e.stopPropagation();
                 onDeleteChat(chat.id);
               }}
-              className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#8b96aa] transition-colors hover:bg-[#1a1f2b] hover:text-red-400"
+              className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-push-fg-muted transition-colors hover:bg-push-surface-raised hover:text-red-400"
               aria-label={`Delete ${chat.title}`}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -260,7 +260,7 @@ export function RepoChatDrawer({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.06] bg-[#0a0e16]/80 text-[#b4becf] backdrop-blur-xl transition-colors duration-200 hover:text-[#f5f7ff] active:scale-95"
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.06] bg-[#0a0e16]/80 text-push-fg-secondary backdrop-blur-xl transition-colors duration-200 hover:text-push-fg active:scale-95"
         aria-label="Open chats and repos"
         title="Chats and repos"
       >
@@ -270,17 +270,19 @@ export function RepoChatDrawer({
       <Sheet open={open} onOpenChange={closeDrawer}>
       <SheetContent
         side="left"
-        className="w-[86vw] rounded-r-2xl border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] p-0 text-[#f5f7ff] shadow-[0_16px_48px_rgba(0,0,0,0.6),0_4px_16px_rgba(0,0,0,0.3)] sm:max-w-sm [&>[data-slot=sheet-close]]:text-[#b4becf] [&>[data-slot=sheet-close]]:hover:text-[#f5f7ff]"
+        className="w-[86vw] rounded-r-2xl border-[#151b26] bg-push-grad-panel p-0 text-push-fg shadow-[0_16px_48px_rgba(0,0,0,0.6),0_4px_16px_rgba(0,0,0,0.3)] sm:max-w-sm [&>[data-slot=sheet-close]]:text-push-fg-secondary [&>[data-slot=sheet-close]]:hover:text-push-fg"
       >
+        {/* Subtle top glow */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-white/[0.03] to-transparent rounded-tr-2xl" />
         <div className="relative h-full overflow-hidden">
           <div
             className={`absolute inset-0 flex flex-col transition-transform duration-300 ${
               panel === 'settings' ? '-translate-x-full' : 'translate-x-0'
             }`}
           >
-            <SheetHeader className="border-b border-[#1f2531] pb-3">
-              <SheetTitle className="text-[#f5f7ff]">History</SheetTitle>
-              <SheetDescription className="text-[#8b96aa]">
+            <SheetHeader className="border-b border-push-edge pb-3">
+              <SheetTitle className="text-push-fg">History</SheetTitle>
+              <SheetDescription className="text-push-fg-muted">
                 Repos and chats
               </SheetDescription>
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -289,7 +291,7 @@ export function RepoChatDrawer({
                     onNewChat();
                     setOpen(false);
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-1.5 text-xs font-medium text-[#b4becf] transition-colors hover:border-[#31425a] hover:text-[#f0f4ff]"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-push-edge bg-[#080b10]/95 px-2.5 py-1.5 text-xs font-medium text-push-fg-secondary transition-all duration-200 hover:border-push-edge-hover hover:bg-push-surface-raised hover:text-push-fg active:scale-95"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   New chat
@@ -300,7 +302,7 @@ export function RepoChatDrawer({
                       onBrowseRepos();
                       setOpen(false);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-1.5 text-xs font-medium text-[#8ad4ff] transition-colors hover:border-[#31425a] hover:text-[#c4e9ff]"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-push-edge bg-[#080b10]/95 px-2.5 py-1.5 text-xs font-medium text-push-link transition-all duration-200 hover:border-push-edge-hover hover:bg-push-surface-raised hover:text-push-fg active:scale-95"
                   >
                     <House className="h-3.5 w-3.5" />
                     Home
@@ -312,7 +314,7 @@ export function RepoChatDrawer({
                       onSandboxMode();
                       setOpen(false);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-900/15 px-2.5 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:border-emerald-500/50 hover:text-emerald-200"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-900/15 px-2.5 py-1.5 text-xs font-medium text-emerald-300 transition-all duration-200 hover:border-emerald-500/50 hover:text-emerald-200 active:scale-95"
                   >
                     <Box className="h-3.5 w-3.5" />
                     Sandbox
@@ -324,7 +326,7 @@ export function RepoChatDrawer({
                       onExitSandboxMode();
                       setOpen(false);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 py-1.5 text-xs font-medium text-[#b4becf] transition-colors hover:border-[#31425a] hover:text-[#f0f4ff]"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-push-edge bg-[#080b10]/95 px-2.5 py-1.5 text-xs font-medium text-push-fg-secondary transition-all duration-200 hover:border-push-edge-hover hover:bg-push-surface-raised hover:text-push-fg active:scale-95"
                   >
                     <X className="h-3.5 w-3.5" />
                     Exit sandbox
@@ -332,12 +334,12 @@ export function RepoChatDrawer({
                 )}
               </div>
               <div className="relative mt-2">
-                <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-[#5f6b80]" />
+                <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-push-fg-dim" />
                 <input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search repos and chats"
-                  className="h-8 w-full rounded-lg border border-[#242d3d] bg-[#05070b] pl-8 pr-2.5 text-xs text-[#d7deeb] outline-none placeholder:text-[#5f6b80] focus:border-[#3d5579]"
+                  className="h-8 w-full rounded-xl border border-push-edge bg-push-surface pl-8 pr-2.5 text-xs text-push-fg-secondary outline-none placeholder:text-push-fg-dim/70 focus:border-push-sky/50 transition-colors"
                 />
               </div>
             </SheetHeader>
@@ -348,23 +350,23 @@ export function RepoChatDrawer({
                   const isExpanded = isSearching || (expandedRepos[repo.full_name] ?? (activeRepo?.full_name === repo.full_name));
                   const isActiveRepo = activeRepo?.id === repo.id;
                   return (
-                    <div key={repo.id} className="rounded-xl border border-[#1f2531] bg-[#070a10]">
+                    <div key={repo.id} className="rounded-xl border border-push-edge bg-push-surface">
                       <button
                         onClick={() => toggleRepo(repo.full_name, isExpanded)}
                         className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                          isActiveRepo ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
+                          isActiveRepo ? 'bg-push-surface-raised' : 'hover:bg-push-surface-raised'
                         }`}
                       >
                         <ChevronRight
-                          className={`h-3.5 w-3.5 shrink-0 text-[#8b96aa] transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                          className={`h-3.5 w-3.5 shrink-0 text-push-fg-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                         />
-                        <FolderGit2 className={`h-3.5 w-3.5 shrink-0 ${isActiveRepo ? 'text-[#8ad4ff]' : 'text-[#8b96aa]'}`} />
+                        <FolderGit2 className={`h-3.5 w-3.5 shrink-0 ${isActiveRepo ? 'text-push-link' : 'text-push-fg-muted'}`} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium text-[#f5f7ff]">{repo.name}</p>
-                          <p className="text-[11px] text-[#8b96aa]">{chats.length} chat{chats.length !== 1 ? 's' : ''}</p>
+                          <p className="truncate text-[13px] font-medium text-push-fg">{repo.name}</p>
+                          <p className="text-[11px] text-push-fg-muted">{chats.length} chat{chats.length !== 1 ? 's' : ''}</p>
                         </div>
                         {isActiveRepo && (
-                          <span className="rounded-full bg-[#5cb7ff]/15 px-2 py-0.5 text-[10px] font-medium text-[#8ad4ff]">
+                          <span className="rounded-full bg-push-link/15 px-2 py-0.5 text-[10px] font-medium text-push-link">
                             active
                           </span>
                         )}
@@ -373,7 +375,7 @@ export function RepoChatDrawer({
                       {isExpanded && (
                         <div className="space-y-1 px-2 pb-2">
                           {chats.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-[#2a3447] px-2.5 py-2 text-[11px] text-[#8b96aa]">
+                            <div className="rounded-lg border border-dashed border-push-edge px-2.5 py-2 text-[11px] text-push-fg-muted">
                               No chats yet
                             </div>
                           ) : (
@@ -386,8 +388,8 @@ export function RepoChatDrawer({
                 })}
 
                 {filteredUnscopedChats.length > 0 && (
-                  <div className="rounded-xl border border-[#1f2531] bg-[#070a10]">
-                    <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[#8b96aa]">
+                  <div className="rounded-xl border border-push-edge bg-push-surface">
+                    <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-push-fg-muted">
                       Unscoped
                     </div>
                     <div className="space-y-1 px-2 pb-2">
@@ -396,7 +398,7 @@ export function RepoChatDrawer({
                   </div>
                 )}
                 {filteredRepoRows.length === 0 && filteredUnscopedChats.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-[#2a3447] bg-[#070a10] px-3 py-4 text-center text-[12px] text-[#8b96aa]">
+                  <div className="rounded-xl border border-dashed border-push-edge bg-push-surface px-3 py-4 text-center text-[12px] text-push-fg-muted">
                     No repos or chats match your search.
                   </div>
                 )}
@@ -404,10 +406,10 @@ export function RepoChatDrawer({
             </div>
 
             {onOpenSettings && (
-              <div className="border-t border-[#1f2531] px-3 py-2.5">
+              <div className="border-t border-push-edge px-3 py-2.5">
                 <button
                   onClick={() => setPanel('settings')}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[#2a3447] bg-[#070a10] px-3 py-1.5 text-xs font-medium text-[#c5cfde] transition-colors hover:border-[#31425a] hover:text-[#f0f4ff]"
+                  className="inline-flex items-center gap-2 rounded-xl border border-push-edge bg-[#080b10]/95 px-3 py-1.5 text-xs font-medium text-push-fg-secondary transition-all duration-200 hover:border-push-edge-hover hover:bg-push-surface-raised hover:text-push-fg active:scale-95"
                 >
                   <Settings className="h-3.5 w-3.5" />
                   Settings
@@ -421,54 +423,54 @@ export function RepoChatDrawer({
               panel === 'settings' ? 'translate-x-0' : 'translate-x-full'
             }`}
           >
-            <div className="border-b border-[#1f2531] px-4 pb-3 pt-4">
+            <div className="border-b border-push-edge px-4 pb-3 pt-4">
               <button
                 onClick={() => setPanel('history')}
-                className="mb-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[#8b96aa] transition-colors hover:bg-[#0d1119] hover:text-[#d7deeb]"
+                className="mb-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-push-fg-muted transition-colors hover:bg-push-surface-raised hover:text-push-fg-secondary"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Back
               </button>
-              <h3 className="text-sm font-semibold text-[#f5f7ff]">Settings</h3>
-              <p className="mt-1 text-xs text-[#8b96aa]">Pick a section and we&apos;ll slide open full settings.</p>
+              <h3 className="text-sm font-semibold text-push-fg">Settings</h3>
+              <p className="mt-1 text-xs text-push-fg-muted">Pick a section and we&apos;ll slide open full settings.</p>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3">
               <div className="space-y-2">
                 <button
                   onClick={() => openSettingsTab('you')}
-                  className="flex w-full items-center gap-2 rounded-xl border border-[#1f2531] bg-[#070a10] px-3 py-2.5 text-left transition-colors hover:border-[#31425a] hover:bg-[#0d1119]"
+                  className="flex w-full items-center gap-2 rounded-xl border border-push-edge bg-push-surface px-3 py-2.5 text-left transition-colors hover:border-push-edge-hover hover:bg-push-surface-raised"
                 >
-                  <UserRound className="h-4 w-4 text-[#8ad4ff]" />
+                  <UserRound className="h-4 w-4 text-push-link" />
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-[#f5f7ff]">You</p>
-                    <p className="text-[11px] text-[#8b96aa]">GitHub, profile, identity</p>
+                    <p className="text-[13px] font-medium text-push-fg">You</p>
+                    <p className="text-[11px] text-push-fg-muted">GitHub, profile, identity</p>
                   </div>
                 </button>
 
                 <button
                   onClick={() => openSettingsTab('workspace')}
-                  className="flex w-full items-center gap-2 rounded-xl border border-[#1f2531] bg-[#070a10] px-3 py-2.5 text-left transition-colors hover:border-[#31425a] hover:bg-[#0d1119]"
+                  className="flex w-full items-center gap-2 rounded-xl border border-push-edge bg-push-surface px-3 py-2.5 text-left transition-colors hover:border-push-edge-hover hover:bg-push-surface-raised"
                 >
-                  <FolderCog className="h-4 w-4 text-[#8ad4ff]" />
+                  <FolderCog className="h-4 w-4 text-push-link" />
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-[#f5f7ff]">Workspace</p>
-                    <p className="text-[11px] text-[#8b96aa]">Context mode, sandbox controls</p>
+                    <p className="text-[13px] font-medium text-push-fg">Workspace</p>
+                    <p className="text-[11px] text-push-fg-muted">Context mode, sandbox controls</p>
                   </div>
                 </button>
 
                 <button
                   onClick={() => openSettingsTab('ai')}
-                  className="flex w-full items-center gap-2 rounded-xl border border-[#1f2531] bg-[#070a10] px-3 py-2.5 text-left transition-colors hover:border-[#31425a] hover:bg-[#0d1119]"
+                  className="flex w-full items-center gap-2 rounded-xl border border-push-edge bg-push-surface px-3 py-2.5 text-left transition-colors hover:border-push-edge-hover hover:bg-push-surface-raised"
                 >
-                  <Cpu className="h-4 w-4 text-[#8ad4ff]" />
+                  <Cpu className="h-4 w-4 text-push-link" />
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-[#f5f7ff]">AI</p>
-                    <p className="text-[11px] text-[#8b96aa]">Keys, provider setup, models</p>
+                    <p className="text-[13px] font-medium text-push-fg">AI</p>
+                    <p className="text-[11px] text-push-fg-muted">Keys, provider setup, models</p>
                   </div>
                 </button>
 
-                <div className="pt-2 text-[11px] text-[#667188]">
+                <div className="pt-2 text-[11px] text-push-fg-dim">
                   Backend and model switching now live in the bottom tray for faster access.
                 </div>
               </div>

@@ -84,6 +84,24 @@ select:focus-visible {
   }
 }
 
+/* ── Push gradient tokens ─────────────────────────────────── */
+/* Defined as CSS utilities because Tailwind can't tokenize     */
+/* background-image in theme.colors. These are the 4 semantic   */
+/* gradients used across the app. Change the hex values here    */
+/* and every card/panel/input follows.                          */
+.bg-push-grad-card {
+  background: linear-gradient(180deg, #090d14 0%, #06090f 100%);
+}
+.bg-push-grad-panel {
+  background: linear-gradient(180deg, #05070b 0%, #020306 100%);
+}
+.bg-push-grad-input {
+  background: linear-gradient(180deg, #0a0d13 0%, #04060a 100%);
+}
+.bg-push-grad-icon {
+  background: linear-gradient(180deg, #0d1119 0%, #070a10 100%);
+}
+
 /* Hex icon tap animation */
 @keyframes hex-tap {
   0% {

@@ -67,7 +67,7 @@ export function RepoPicker({
   return (
     <div className="flex h-dvh flex-col bg-[#000] safe-area-top">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] px-4 py-3">
+      <header className="flex items-center justify-between border-b border-[#151b26] bg-push-grad-panel px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
           {user && (
             <span className="text-sm font-medium text-push-fg truncate">
@@ -148,7 +148,7 @@ export function RepoPicker({
               <button
                 key={repo.id}
                 onClick={() => onSelect(repo)}
-                className="flex w-full flex-col gap-1.5 rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)] p-3.5 text-left shadow-[0_10px_28px_rgba(0,0,0,0.38)] transition-all duration-200 hover:border-[#31425a] hover:bg-[#0d1119] active:scale-[0.99]"
+                className="flex w-full flex-col gap-1.5 rounded-xl border border-push-edge bg-push-grad-card p-3.5 text-left shadow-[0_10px_28px_rgba(0,0,0,0.38)] transition-all duration-200 hover:border-[#31425a] hover:bg-[#0d1119] active:scale-[0.99]"
               >
                 {/* Name row */}
                 <div className="flex items-center gap-2">

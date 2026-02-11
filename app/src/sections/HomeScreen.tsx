@@ -146,7 +146,7 @@ export function HomeScreen({
       <button
         key={repo.id}
         onClick={() => onSelectRepo(repo)}
-        className="flex w-full flex-col gap-1.5 rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)] p-3.5 text-left shadow-[0_10px_28px_rgba(0,0,0,0.38)] transition-all duration-200 hover:border-[#31425a] hover:bg-[#0d1119] active:scale-[0.99]"
+        className="flex w-full flex-col gap-1.5 rounded-xl border border-push-edge bg-push-grad-card p-3.5 text-left shadow-[0_10px_28px_rgba(0,0,0,0.38)] transition-all duration-200 hover:border-[#31425a] hover:bg-[#0d1119] active:scale-[0.99]"
       >
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-push-fg">

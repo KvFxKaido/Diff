@@ -419,7 +419,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   return (
     <div className="flex items-start gap-2.5 px-4 py-1.5 group/assistant animate-fade-in">
-      <div className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#1e2634] bg-[linear-gradient(180deg,#0d1119_0%,#070a10_100%)]">
+      <div className="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#1e2634] bg-push-grad-icon">
         <svg
           width="10"
           height="10"

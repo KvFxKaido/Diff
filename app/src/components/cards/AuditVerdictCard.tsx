@@ -11,7 +11,7 @@ export function AuditVerdictCard({ data }: { data: AuditVerdictCardData }) {
   const isSafe = data.verdict === 'safe';
 
   return (
-    <div className="my-2.5 max-w-full overflow-hidden rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)] shadow-push-card">
+    <div className="my-2.5 max-w-full overflow-hidden rounded-xl border border-push-edge bg-push-grad-card shadow-push-card">
       {/* Verdict header */}
       <div className={`px-3.5 py-3 flex items-center gap-2.5 ${isSafe ? 'bg-[#22c55e]/5' : 'bg-[#ef4444]/5'}`}>
         {isSafe ? (

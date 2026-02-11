@@ -139,7 +139,7 @@ export function FileBrowser({ sandboxId, repoName, onBack }: FileBrowserProps) {
   return (
     <div className="flex h-dvh flex-col bg-[#000] safe-area-top">
       {/* Header */}
-      <header className="flex items-center gap-2 border-b border-[#151b26] bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] px-3 py-3">
+      <header className="flex items-center gap-2 border-b border-[#151b26] bg-push-grad-panel px-3 py-3">
         <button
           onClick={onBack}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-push-edge bg-push-surface text-push-fg-secondary transition-colors hover:border-[#31425a] hover:bg-[#0d1119] hover:text-push-fg active:scale-95"

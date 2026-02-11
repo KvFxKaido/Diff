@@ -58,7 +58,7 @@ function EmptyState({
         <button
           type="button"
           onClick={handleHexTap}
-          className="mx-auto mb-5 flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-[#1e2634] bg-[linear-gradient(180deg,#0d1119_0%,#070a10_100%)] shadow-[0_12px_30px_rgba(0,0,0,0.55)] active:scale-95 transition-transform"
+          className="mx-auto mb-5 flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-[#1e2634] bg-push-grad-icon shadow-[0_12px_30px_rgba(0,0,0,0.55)] active:scale-95 transition-transform"
         >
           <svg
             width="22"
@@ -92,7 +92,7 @@ function EmptyState({
             <button
               key={suggestion}
               onClick={() => onSuggestion?.(suggestion)}
-              className="cursor-pointer rounded-xl border border-push-edge bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)] px-4 py-3 text-left text-sm text-push-fg-secondary shadow-push-card card-hover spring-press hover:border-[#31425a] hover:text-[#f0f4ff] hover:shadow-push-card-hover"
+              className="cursor-pointer rounded-xl border border-push-edge bg-push-grad-card px-4 py-3 text-left text-sm text-push-fg-secondary shadow-push-card card-hover spring-press hover:border-[#31425a] hover:text-[#f0f4ff] hover:shadow-push-card-hover"
             >
               {suggestion}
             </button>
@@ -192,7 +192,7 @@ export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode
           w-10 h-10
           rounded-full
           border border-push-edge
-          bg-[linear-gradient(180deg,#090d14_0%,#06090f_100%)]
+          bg-push-grad-card
           text-push-fg-secondary
           shadow-push-lg backdrop-blur-sm
           transition-all duration-300 cubic-bezier(0.16, 1, 0.3, 1)

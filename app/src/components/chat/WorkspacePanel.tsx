@@ -161,8 +161,11 @@ export function WorkspacePanel({
 
   const activeMemory = memories.find((memory) => memory.id === activeMemoryId) ?? null;
   const panelStyle = isOpen && keyboardInset > 0
-    ? { paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardInset}px)` }
-    : undefined;
+    ? {
+        paddingBottom: `calc(env(safe-area-inset-bottom) + ${keyboardInset}px)`,
+        transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+      }
+    : { transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' };
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
@@ -178,19 +181,22 @@ export function WorkspacePanel({
       {/* Panel */}
       <div
         style={panelStyle}
-        className={`fixed z-50 bg-[linear-gradient(180deg,#05070b_0%,#020306_100%)] border-[#151b26] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col
+        className={`fixed z-50 bg-push-grad-panel border-[#151b26] transition-transform duration-300 flex flex-col
           inset-y-0 right-0 w-[90vw] max-w-[420px] rounded-l-2xl border-l shadow-[0_16px_48px_rgba(0,0,0,0.6),0_4px_16px_rgba(0,0,0,0.3)] pb-[env(safe-area-inset-bottom)] md:pb-0
           ${isOpen ? 'translate-x-0' : 'translate-x-full'}
         `}
       >
+        {/* Subtle top glow — matches chat input depth */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/[0.03] to-transparent rounded-tl-2xl" />
+
         {/* Header: close button */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-push-edge shrink-0">
+        <div className="relative flex items-center justify-between px-4 py-3 border-b border-push-edge shrink-0">
           {/* Scratchpad actions (only visible on scratchpad tab) */}
           <div className={`flex items-center gap-1 ${activeTab === 'scratchpad' ? '' : 'invisible'}`}>
             <button
               onClick={handleStartNaming}
               disabled={!content.trim() || isNamingMemory}
-              className="flex h-10 items-center gap-1 rounded-lg px-2 text-xs font-medium text-push-fg-dim transition-colors hover:text-push-fg-secondary hover:bg-[#080b10]/95 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              className="flex h-10 items-center gap-1 rounded-xl border border-push-edge bg-[#080b10]/95 px-2.5 text-xs font-medium text-push-fg-dim transition-all duration-200 hover:text-push-fg-secondary hover:border-push-edge-hover hover:bg-[#0d1119] active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
               aria-label="Save scratchpad memory"
               title="Save memory"
             >
@@ -200,7 +206,7 @@ export function WorkspacePanel({
             <button
               onClick={onClear}
               disabled={!content.trim()}
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:text-push-fg-secondary hover:bg-[#080b10]/95 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-push-edge bg-[#080b10]/95 text-push-fg-dim transition-all duration-200 hover:text-push-fg-secondary hover:border-push-edge-hover hover:bg-[#0d1119] active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
               aria-label="Clear scratchpad"
               title="Clear"
             >
@@ -209,7 +215,7 @@ export function WorkspacePanel({
           </div>
           <button
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:text-push-fg-secondary hover:bg-[#080b10]/95 active:scale-95"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-push-edge bg-[#080b10]/95 text-push-fg-dim transition-all duration-200 hover:text-push-fg-secondary hover:border-push-edge-hover hover:bg-[#0d1119] active:scale-95"
             aria-label="Close panel"
           >
             <X className="h-4 w-4" />
@@ -217,7 +223,7 @@ export function WorkspacePanel({
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-1 px-4 py-2 border-b border-push-edge shrink-0">
+        <div className="flex gap-1.5 px-4 py-2.5 border-b border-push-edge shrink-0">
           {([
             ['console', 'Console', TerminalSquare],
             ['scratchpad', 'Scratchpad', StickyNote],
@@ -226,10 +232,10 @@ export function WorkspacePanel({
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
                 activeTab === key
-                  ? 'bg-[#101621] text-push-fg'
-                  : 'text-push-fg-dim hover:text-[#d1d8e6]'
+                  ? 'border border-push-edge-hover bg-[#0d1119] text-push-fg shadow-push-sm'
+                  : 'border border-transparent text-push-fg-dim hover:text-push-fg-secondary hover:bg-[#080b10]/80'
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -247,8 +253,8 @@ export function WorkspacePanel({
                   key={i}
                   className={
                     log.type === 'call'
-                      ? 'text-[#d1d8e6]'
-                      : 'text-[#6f7787] border-l border-push-edge ml-1 pl-3'
+                      ? 'text-push-fg-secondary'
+                      : 'text-push-fg-dim border-l border-push-edge ml-1 pl-3'
                   }
                 >
                   {log.content}
@@ -270,20 +276,20 @@ export function WorkspacePanel({
                 onChange={(e) => setMemoryName(e.target.value)}
                 onKeyDown={handleNameKeyDown}
                 placeholder="Name this memory..."
-                className="h-10 flex-1 rounded-lg border border-push-edge bg-push-surface px-3 text-xs text-[#e2e8f0] outline-none focus:border-push-sky/50 placeholder:text-[#6f7787]"
+                className="h-10 flex-1 rounded-xl border border-push-edge bg-push-surface px-3 text-xs text-push-fg-secondary outline-none focus:border-push-sky/50 placeholder:text-push-fg-dim/70 transition-colors"
                 aria-label="Memory name"
               />
               <button
                 onClick={handleConfirmNaming}
                 disabled={!memoryName.trim()}
-                className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500 text-white transition-colors hover:bg-emerald-600 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white transition-all duration-200 hover:bg-emerald-600 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
                 aria-label="Confirm memory name"
               >
                 <Check className="h-4 w-4" />
               </button>
               <button
                 onClick={handleCancelNaming}
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:text-push-fg-secondary hover:bg-[#080b10]/95 active:scale-95"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-push-edge bg-[#080b10]/95 text-push-fg-dim transition-all duration-200 hover:text-push-fg-secondary hover:border-push-edge-hover hover:bg-[#0d1119] active:scale-95"
                 aria-label="Cancel naming"
               >
                 <X className="h-4 w-4" />
@@ -296,7 +302,7 @@ export function WorkspacePanel({
             <select
               value={activeMemoryId ?? ''}
               onChange={(e) => handleLoadMemory(e.target.value)}
-              className="h-10 flex-1 rounded-lg border border-push-edge bg-push-surface px-2 text-xs text-[#e2e8f0] outline-none focus:border-push-sky/50"
+              className="h-10 flex-1 rounded-xl border border-push-edge bg-push-surface px-2.5 text-xs text-push-fg-secondary outline-none focus:border-push-sky/50 transition-colors"
               aria-label="Select saved memory"
             >
               <option value="">Scratchpad (unsaved)</option>
@@ -309,7 +315,7 @@ export function WorkspacePanel({
             <button
               onClick={() => activeMemory && onDeleteMemory(activeMemory.id)}
               disabled={!activeMemory}
-              className="flex h-10 items-center rounded-lg border border-push-edge px-2 text-xs text-push-fg-dim transition-colors hover:text-[#f97316] hover:border-push-edge-hover hover:bg-[#080b10]/95 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              className="flex h-10 items-center rounded-xl border border-push-edge bg-[#080b10]/95 px-2.5 text-xs text-push-fg-dim transition-all duration-200 hover:text-[#f97316] hover:border-push-edge-hover hover:bg-[#0d1119] active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
               aria-label="Delete memory"
             >
               Delete
@@ -323,7 +329,7 @@ export function WorkspacePanel({
               value={content}
               onChange={(e) => onContentChange(e.target.value)}
               placeholder={`Shared notes between you and the agent...\n\n• Paste code, errors, requirements\n• Ask the agent to add ideas here\n• Reference in conversation\n\nThe agent sees this in every message.`}
-              className="h-full w-full resize-none bg-push-surface border border-push-edge rounded-xl px-4 py-3 text-sm text-push-fg placeholder:text-[#6f7787] outline-none focus:border-push-sky/50 font-mono leading-relaxed"
+              className="h-full w-full resize-none bg-push-surface border border-push-edge rounded-xl px-4 py-3 text-sm text-push-fg placeholder:text-push-fg-dim/70 outline-none focus:border-push-sky/50 font-mono leading-relaxed"
             />
           </div>
 
