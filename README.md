@@ -19,6 +19,8 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 - **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
 - **User identity** — tell the agent your name, bio, and GitHub login so it knows who it's working with
 - **Streaming** — responses arrive token-by-token with visible thinking
+- **Branch & merge** — create branches, commit freely, merge via GitHub PR with Auditor review — all from the chat
+- **Protect Main** — optional setting blocks direct commits to `main`, requiring a branch for all work
 - **Sandbox Mode** — Start coding immediately without GitHub auth. Ephemeral workspace that auto-expires after 30 minutes. Download your work before it disappears.
 
 ## Who It's For
@@ -115,6 +117,8 @@ Role-based agent system. **Models are replaceable; roles are not.**
 
 Three AI backends are supported: **Kimi For Coding**, **Mistral Vibe**, and **Ollama Cloud**. All use OpenAI-compatible streaming. The active backend serves all three roles. Provider selection is locked per chat after the first user message; start a new chat to switch providers.
 
+There is always exactly one **Active Branch** per repo session — it is the commit target, push target, diff base, and chat context. Switching branches tears down the sandbox and creates a fresh one (clean state). All merges go through **GitHub Pull Requests** — Push never runs `git merge` locally. The merge flow: check working tree → find/create PR → Auditor review → check eligibility → merge via GitHub API (merge commit strategy). Chats are permanently **branch-scoped** and grouped by branch in the history drawer.
+
 ## Browserbase Status
 
 Current state from `documents/Browserbase Integration Spike.md`:
@@ -141,11 +145,11 @@ Push/
 │   ├── worker.ts          # Cloudflare Worker — Kimi/Ollama/Mistral proxy + sandbox proxy
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── chat/           # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner
+│   │   │   ├── chat/           # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner, BranchCreateSheet, MergeFlowSheet
 │   │   │   ├── cards/          # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, FileSearchCard, CommitReviewCard, TestResultsCard, EditorCard, BrowserScreenshotCard, BrowserExtractCard, and more
 │   │   │   ├── filebrowser/    # FileActionsSheet, CommitPushSheet, FileEditor, UploadButton
 │   │   │   └── ui/             # shadcn/ui component library
-│   │   ├── hooks/              # useChat, useSandbox, useScratchpad, useUserProfile, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useTavilyConfig, useUsageTracking
+│   │   ├── hooks/              # useChat, useSandbox, useScratchpad, useUserProfile, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useProtectMain, useTavilyConfig, useUsageTracking
 │   │   ├── lib/                # Agent logic, tool protocols, git operations, web search, model catalog, prompts
 │   │   ├── sections/           # OnboardingScreen, RepoPicker, FileBrowser, HomeScreen
 │   │   └── types/              # TypeScript definitions

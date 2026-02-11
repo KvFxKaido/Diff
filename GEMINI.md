@@ -37,6 +37,11 @@ Push is a personal chat interface backed by role-based AI agents (Orchestrator, 
 *   **Browser Tools (Optional):** Sandbox-backed webpage screenshot + text extraction via Browserbase.
 *   **User Identity:** Display name, bio, and GitHub login set in Settings. Stored in localStorage via `useUserProfile` hook. Injected into Orchestrator and Coder system prompts via `buildUserIdentityBlock()`.
 *   **Scratchpad:** Shared persistent notepad for user/AI collaboration.
+*   **Active Branch Model:** There is always exactly one Active Branch per repo session — commit target, push target, diff base, and chat context. Switching branches tears down the sandbox and creates a fresh one (clean state). Branch creation via header "Create Branch" action (on main); feature branches show "Merge into main" instead.
+*   **Merge Flow (GitHub PR Merge):** All merges go through GitHub — Push never runs `git merge` locally. Five-step ritual: (1) check for clean working tree, (2) find or create PR via GitHub API, (3) Auditor reviews PR diff with SAFE/UNSAFE verdict, (4) check merge eligibility, (5) merge via GitHub API (merge commit strategy). Post-merge: switch to main, optionally delete branch. Merge conflicts and branch protection are surfaced, never bypassed.
+*   **Protect Main:** Optional setting that blocks direct commits to `main`, requiring a branch for all work. Global default (on/off) plus per-repo override (inherit/always/never). Stored in localStorage via `useProtectMain` hook. No-op in Sandbox Mode.
+*   **Branch-Scoped Chats:** Conversations are permanently bound to the branch on which they were created. History drawer groups chats by branch. After merge, branch chats receive a closure message; deleted branches marked `(Merged + Deleted)`.
+*   **PR Awareness:** Home screen shows open PR count and review-requested indicator. Chat tools include `github_list_prs`, `github_get_pr`, `github_pr_diff`, and `github_list_branches`.
 *   **Context Management:** Token-budget rolling window with summarization.
 
 ## Directory Structure
@@ -46,16 +51,16 @@ Push/
 ├── app/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner
+│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner, BranchCreateSheet, MergeFlowSheet
 │   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, FileSearchCard, CommitReviewCard, TestResultsCard, EditorCard, BrowserScreenshotCard, BrowserExtractCard, and more
 │   │   │   ├── filebrowser/ # FileActionsSheet, CommitPushSheet, FileEditor, UploadButton
 │   │   │   └── ui/        # shadcn/ui library
-│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useGitHubAppAuth, useUserProfile, useFileBrowser, useCodeMirror, useCommitPush, useTavilyConfig, useUsageTracking, etc.)
+│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useGitHubAppAuth, useUserProfile, useFileBrowser, useCodeMirror, useCommitPush, useProtectMain, useTavilyConfig, useUsageTracking, etc.)
 │   │   ├── lib/           # Core Logic
 │   │   │   ├── orchestrator.ts    # Agent coordination & streaming
 │   │   │   ├── coder-agent.ts     # Coder sub-agent loop
 │   │   │   ├── auditor-agent.ts   # Auditor safety gate
-│   │   │   ├── github-tools.ts    # GitHub API tools
+│   │   │   ├── github-tools.ts    # GitHub API tools, branch/merge/PR operations
 │   │   │   ├── sandbox-tools.ts   # Sandbox interaction tools
 │   │   │   ├── web-search-tools.ts # Web search (Tavily, Ollama native, DuckDuckGo)
 │   │   │   ├── model-catalog.ts   # Ollama/Mistral model lists
@@ -116,4 +121,5 @@ Key variables: `VITE_MOONSHOT_API_KEY` (Kimi), `VITE_MISTRAL_API_KEY` (Mistral),
 *   **Styling:** Use Tailwind CSS via `cn()` utility for class merging.
 *   **Components:** Functional components with hooks. PascalCase naming.
 *   **State:** Custom hooks for logic encapsulation (`useChat`, `useSandbox`).
+*   **Branching:** Active branch is the single context for commits, pushes, diffs, and chat. Chats are permanently branch-scoped. All merges go through GitHub PR API.
 *   **Safety:** Auditor defaults to UNSAFE on error. Secrets managed via Cloudflare Worker.

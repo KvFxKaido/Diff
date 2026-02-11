@@ -74,6 +74,26 @@ A shared notepad that both the user and AI can read/write. Content persists in l
 
 Ephemeral workspace with no GitHub repo. Entry via onboarding or repo picker. GitHub tools are blocked; only sandbox tools are available. 30-min container lifetime with expiry warning. Download workspace as tar.gz via header button or `sandbox_download` tool.
 
+### Active Branch Model
+
+There is always exactly one Active Branch per repo session — it is the commit target, push target, diff base, and chat context. Switching branches is atomic and explicit — it tears down the sandbox and creates a fresh one on the target branch (clean state, no carryover). Branch switching is available in the history drawer and home page. Branch creation happens only via the header "Create Branch" action (available on main). On feature branches, the header shows "Merge into main" instead.
+
+### Merge Flow (GitHub PR Merge)
+
+All merges go through GitHub — Push never runs `git merge` locally. "Merge into main" is a five-step ritual: (1) check for clean working tree (commit & push if dirty), (2) find or create a Pull Request via GitHub API, (3) Auditor reviews the PR diff (`main...active`) with a SAFE/UNSAFE verdict, (4) check merge eligibility (mergeable state, CI, reviews), (5) merge via GitHub API (merge commit strategy, no fast-forward). Post-merge: user can switch to main and optionally delete the branch. Merge conflicts and branch protection are surfaced, never bypassed. PRs are only created as part of this merge ritual — no standalone "create PR" action.
+
+### Protect Main
+
+Optional setting that blocks direct commits to `main`, requiring a branch for all work. Configurable as a global default (on/off) plus per-repo override (inherit/always/never). Stored in localStorage via `useProtectMain` hook. No-op in Sandbox Mode.
+
+### Branch-Scoped Chats
+
+Conversations are permanently bound to the branch on which they were created. The history drawer groups chats by branch. Switching to a branch with existing chats lets the user resume any of them. After merge, branch chats receive a closure message; deleted branches are marked `(Merged + Deleted)` in history. Chats are never duplicated or rebound.
+
+### PR Awareness
+
+Home screen shows open PR count and review-requested indicator. Chat tools include `github_list_prs`, `github_get_pr`, `github_pr_diff`, and `github_list_branches` for reading PR/branch state in any repo.
+
 ### Rolling Window
 
 Context uses a token budget with summarization. Older tool-heavy messages are compacted first, then oldest message pairs are trimmed if needed while preserving critical context.
@@ -91,8 +111,10 @@ When the user selects a repo, the app fetches project instruction files via the 
 5. **Scratchpad** → Shared notepad for ideas/requirements (user + AI can edit)
 6. **Sandbox** → Clone repo to container, run commands, edit files
 7. **Coder** → Autonomous coding task execution (uses active backend)
-8. **Auditor** → Every commit gets safety verdict (uses active backend)
-9. **Cards** → Structured results render as inline cards
+8. **Branch** → Create branches, switch context (tears down sandbox), commit to active branch
+9. **Auditor** → Every commit gets safety verdict (uses active backend)
+10. **Merge** → PR creation + Auditor review + GitHub merge (merge commit strategy)
+11. **Cards** → Structured results render as inline cards
 
 ## Directory Structure
 
@@ -106,11 +128,11 @@ Push/
 │   ├── src/
 │   │   ├── App.tsx        # Root component, screen state machine
 │   │   ├── components/
-│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner
+│   │   │   ├── chat/      # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspacePanel, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner, BranchCreateSheet, MergeFlowSheet
 │   │   │   ├── cards/     # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, FileSearchCard, CommitReviewCard, TestResultsCard, EditorCard, BrowserScreenshotCard, BrowserExtractCard, and more
 │   │   │   ├── filebrowser/  # FileActionsSheet, CommitPushSheet, FileEditor, UploadButton
 │   │   │   └── ui/        # shadcn/ui component library
-│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useTavilyConfig, useUsageTracking, etc.)
+│   │   ├── hooks/         # React hooks (useChat, useSandbox, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useProtectMain, useTavilyConfig, useUsageTracking, etc.)
 │   │   ├── lib/           # Core logic, agent modules, web search, model catalog, prompts, feature flags, snapshot manager
 │   │   ├── sections/      # OnboardingScreen, RepoPicker, FileBrowser, HomeScreen
 │   │   ├── types/index.ts # All shared types
@@ -129,7 +151,7 @@ Push/
 | File | Purpose |
 |------|---------|
 | `lib/orchestrator.ts` | SSE streaming, think-token parsing, token-budget context management |
-| `lib/github-tools.ts` | GitHub tool protocol, `delegate_coder`, `fetchProjectInstructions` |
+| `lib/github-tools.ts` | GitHub tool protocol, `delegate_coder`, `fetchProjectInstructions`, branch/merge/PR operations (`executeCreateBranch`, `executeCreatePR`, `executeMergePR`, `executeDeleteBranch`, `executeCheckPRMergeable`, `executeFindExistingPR`) |
 | `lib/sandbox-tools.ts` | Sandbox tool definitions |
 | `lib/scratchpad-tools.ts` | Scratchpad tools, prompt injection escaping |
 | `lib/sandbox-client.ts` | HTTP client for `/api/sandbox/*` endpoints |
@@ -167,6 +189,7 @@ Push/
 | `hooks/useFileBrowser.ts` | File browser state and navigation |
 | `hooks/useCodeMirror.ts` | CodeMirror editor integration |
 | `hooks/useCommitPush.ts` | Commit and push workflow state |
+| `hooks/useProtectMain.ts` | Main branch protection (global default + per-repo override), localStorage persistence |
 | `hooks/useOllamaConfig.ts` | Ollama backend configuration and model selection |
 | `hooks/useMoonshotKey.ts` | Kimi/Moonshot API key management |
 | `hooks/useMistralConfig.ts` | Mistral backend configuration and model selection |
@@ -200,6 +223,9 @@ Push/
 - Auditor gate cannot be bypassed — every commit requires SAFE verdict
 - Auditor defaults to UNSAFE on any error (fail-safe design)
 - Repo context is hard-locked — Orchestrator only sees selected repo
+- Active branch is the single context for commits, pushes, diffs, and chat — switching branches tears down the sandbox
+- Chats are permanently branch-scoped — never duplicated or rebound across branches
+- All merges go through GitHub PR API — no local `git merge`
 - Sandbox containers auto-terminate after 30 minutes
 - Browser tools validate URL shape/protocol and reject private-network targets
 - Scratchpad content is escaped to prevent prompt injection (capped at 50KB)
