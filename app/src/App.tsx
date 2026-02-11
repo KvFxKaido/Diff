@@ -1168,8 +1168,69 @@ function App() {
               </p>
             </div>
           </div>
-          {/* Branch badge — shown when a repo is active and not in sandbox mode */}
-          {activeRepo && !isSandboxMode && (
+          {isSandboxMode && (
+              <>
+                <span className="text-[10px] text-push-fg-dim">ephemeral</span>
+                {latestSnapshot && (
+                  <span
+                    className={`text-[10px] ${snapshotIsStale ? 'text-amber-400' : 'text-[#5f6b80]'}`}
+                    title={`Latest snapshot: ${new Date(latestSnapshot.createdAt).toLocaleString()}`}
+                  >
+                    {snapshotIsStale ? `snapshot stale (${snapshotAgeLabel})` : `snapshot ${snapshotAgeLabel}`}
+                  </span>
+                )}
+                {sandbox.status === 'ready' && (
+                  <button
+                    onClick={() => captureSnapshot('manual')}
+                    disabled={snapshotSaving || snapshotRestoring}
+                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
+                    title="Save Snapshot Now"
+                    aria-label="Save Snapshot Now"
+                  >
+                    {snapshotSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    Save
+                  </button>
+                )}
+                {latestSnapshot && (
+                  <button
+                    onClick={handleRestoreFromSnapshot}
+                    disabled={snapshotSaving || snapshotRestoring || sandbox.status === 'creating'}
+                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
+                    title="Restore from Last Snapshot"
+                    aria-label="Restore from Last Snapshot"
+                  >
+                    {snapshotRestoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    Restore
+                  </button>
+                )}
+                {sandbox.status === 'ready' && (
+                  <button
+                    onClick={handleSandboxDownload}
+                    disabled={sandboxDownloading}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
+                    title="Download workspace"
+                    aria-label="Download workspace"
+                  >
+                    {sandboxDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+                {snapshotRestoring && snapshotRestoreProgress && (
+                  <div className="flex min-w-[120px] flex-col gap-1">
+                    <span className="text-[10px] text-push-fg-muted">{snapshotRestoreProgress.message}</span>
+                    <div className="h-1 w-full overflow-hidden rounded bg-[#1a2130]">
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-300"
+                        style={{ width: `${snapshotStagePercent(snapshotRestoreProgress.stage)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+        </div>
+        {/* Centered branch selector for chat mode */}
+        {activeRepo && !isSandboxMode && (
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
             <DropdownMenu
               open={branchMenuOpen}
               onOpenChange={(open) => {
@@ -1179,7 +1240,7 @@ function App() {
                 }
               }}
             >
-              <DropdownMenuTrigger className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 px-2 py-1 backdrop-blur-xl transition-colors hover:border-[#31425a] hover:bg-[#0d1119]">
+              <DropdownMenuTrigger className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/90 px-2 py-1 backdrop-blur-xl transition-colors hover:border-[#31425a] hover:bg-[#0d1119]">
                 <GitBranch className="h-3 w-3 text-[#5f6b80]" />
                 <span className="max-w-[100px] truncate text-[10px] font-medium text-[#8b96aa]">
                   {currentBranch}
@@ -1187,7 +1248,7 @@ function App() {
                 <ChevronDown className={`h-3 w-3 text-[#5f6b80] transition-transform ${branchMenuOpen ? 'rotate-180' : ''}`} />
               </DropdownMenuTrigger>
               <DropdownMenuContent
-                align="start"
+                align="center"
                 sideOffset={8}
                 className="w-[240px] rounded-xl border border-push-edge bg-push-grad-card shadow-[0_18px_40px_rgba(0,0,0,0.62)]"
               >
@@ -1275,67 +1336,8 @@ function App() {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          {isSandboxMode && (
-              <>
-                <span className="text-[10px] text-push-fg-dim">ephemeral</span>
-                {latestSnapshot && (
-                  <span
-                    className={`text-[10px] ${snapshotIsStale ? 'text-amber-400' : 'text-[#5f6b80]'}`}
-                    title={`Latest snapshot: ${new Date(latestSnapshot.createdAt).toLocaleString()}`}
-                  >
-                    {snapshotIsStale ? `snapshot stale (${snapshotAgeLabel})` : `snapshot ${snapshotAgeLabel}`}
-                  </span>
-                )}
-                {sandbox.status === 'ready' && (
-                  <button
-                    onClick={() => captureSnapshot('manual')}
-                    disabled={snapshotSaving || snapshotRestoring}
-                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
-                    title="Save Snapshot Now"
-                    aria-label="Save Snapshot Now"
-                  >
-                    {snapshotSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    Save
-                  </button>
-                )}
-                {latestSnapshot && (
-                  <button
-                    onClick={handleRestoreFromSnapshot}
-                    disabled={snapshotSaving || snapshotRestoring || sandbox.status === 'creating'}
-                    className="flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
-                    title="Restore from Last Snapshot"
-                    aria-label="Restore from Last Snapshot"
-                  >
-                    {snapshotRestoring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                    Restore
-                  </button>
-                )}
-                {sandbox.status === 'ready' && (
-                  <button
-                    onClick={handleSandboxDownload}
-                    disabled={sandboxDownloading}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-push-fg-dim transition-colors hover:bg-[#0d1119] hover:text-emerald-400 active:scale-95 disabled:opacity-50"
-                    title="Download workspace"
-                    aria-label="Download workspace"
-                  >
-                    {sandboxDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  </button>
-                )}
-                {snapshotRestoring && snapshotRestoreProgress && (
-                  <div className="flex min-w-[120px] flex-col gap-1">
-                    <span className="text-[10px] text-push-fg-muted">{snapshotRestoreProgress.message}</span>
-                    <div className="h-1 w-full overflow-hidden rounded bg-[#1a2130]">
-                      <div
-                        className="h-full bg-emerald-500 transition-all duration-300"
-                        style={{ width: `${snapshotStagePercent(snapshotRestoreProgress.stage)}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-        </div>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           {/* File browser */}
           {(activeRepo || isSandboxMode) && (
