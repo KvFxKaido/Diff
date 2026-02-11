@@ -26,5 +26,14 @@ export function useActiveRepo() {
     setActiveRepoState(null);
   }, []);
 
-  return { activeRepo, setActiveRepo, clearActiveRepo };
+  const setCurrentBranch = useCallback((branch: string) => {
+    setActiveRepoState((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, current_branch: branch };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  return { activeRepo, setActiveRepo, clearActiveRepo, setCurrentBranch };
 }

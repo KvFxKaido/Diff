@@ -259,6 +259,7 @@ export function useChat(
   scratchpad?: ScratchpadHandlers,
   usageHandler?: UsageHandler,
   runtimeHandlers?: ChatRuntimeHandlers,
+  branchInfo?: { currentBranch?: string; defaultBranch?: string },
 ) {
   const [conversations, setConversations] = useState<Record<string, Conversation>>(loadConversations);
   const [activeChatId, setActiveChatId] = useState<string>(() => loadActiveChatId(conversations));
@@ -271,6 +272,7 @@ export function useChat(
   const cancelStatusTimerRef = useRef<number | null>(null);
   const workspaceContextRef = useRef<string | null>(null);
   const sandboxIdRef = useRef<string | null>(null);
+  const isMainProtectedRef = useRef(false);
   const autoCreateRef = useRef(false); // Guard against creation loops
 
   // Keep activeRepoFullName in a ref so callbacks always see the latest value
@@ -286,6 +288,10 @@ export function useChat(
   usageHandlerRef.current = usageHandler;
   const runtimeHandlersRef = useRef(runtimeHandlers);
   runtimeHandlersRef.current = runtimeHandlers;
+
+  // Keep branch info in a ref so callbacks always see the latest
+  const branchInfoRef = useRef(branchInfo);
+  branchInfoRef.current = branchInfo;
 
   // Derived state
   const messages = useMemo(
@@ -313,16 +319,25 @@ export function useChat(
   const lockedProvider: AIProviderType | null = conversationProvider || null;
   const lockedModel: string | null = conversationModel || null;
 
-  // Filter sortedChatIds by active repo
+  // Filter sortedChatIds by active repo + branch
+  const currentBranch = branchInfo?.currentBranch;
+  const defaultBranch = branchInfo?.defaultBranch;
   const sortedChatIds = useMemo(() => {
     return Object.keys(conversations)
       .filter((id) => {
         const conv = conversations[id];
         if (!activeRepoFullName) return !conv.repoFullName; // demo mode
-        return conv.repoFullName === activeRepoFullName;
+        if (conv.repoFullName !== activeRepoFullName) return false;
+
+        // Branch filtering: show chats for the current branch.
+        // Legacy chats (no branch field) appear when viewing the default branch.
+        if (!currentBranch) return true; // no branch context yet — show all
+        const isOnDefaultBranch = currentBranch === (defaultBranch || 'main');
+        if (!conv.branch) return isOnDefaultBranch; // legacy chat — show on default branch only
+        return conv.branch === currentBranch;
       })
       .sort((a, b) => conversations[b].lastMessageAt - conversations[a].lastMessageAt);
-  }, [conversations, activeRepoFullName]);
+  }, [conversations, activeRepoFullName, currentBranch, defaultBranch]);
 
   // --- Auto-switch effect ---
   useEffect(() => {
@@ -330,6 +345,8 @@ export function useChat(
       if (!autoCreateRef.current) {
         autoCreateRef.current = true;
         const id = createId();
+        const bi = branchInfoRef.current;
+        const branch = bi?.currentBranch || bi?.defaultBranch || 'main';
         const newConv: Conversation = {
           id,
           title: 'New Chat',
@@ -337,6 +354,7 @@ export function useChat(
           createdAt: Date.now(),
           lastMessageAt: Date.now(),
           repoFullName: activeRepoFullName,
+          branch,
         };
         setConversations((prev) => {
           const updated = { ...prev, [id]: newConv };
@@ -363,6 +381,10 @@ export function useChat(
 
   const setSandboxId = useCallback((id: string | null) => {
     sandboxIdRef.current = id;
+  }, []);
+
+  const setIsMainProtected = useCallback((value: boolean) => {
+    isMainProtectedRef.current = value;
   }, []);
 
   // --- Lazy sandbox auto-spin (set from App.tsx) ---
@@ -408,6 +430,8 @@ export function useChat(
 
   const createNewChat = useCallback((): string => {
     const id = createId();
+    const bi = branchInfoRef.current;
+    const branch = bi?.currentBranch || bi?.defaultBranch || 'main';
     const newConv: Conversation = {
       id,
       title: 'New Chat',
@@ -415,6 +439,7 @@ export function useChat(
       createdAt: Date.now(),
       lastMessageAt: Date.now(),
       repoFullName: activeRepoFullName || undefined,
+      branch: activeRepoFullName ? branch : undefined,
     };
     setConversations((prev) => {
       const updated = { ...prev, [id]: newConv };
@@ -483,6 +508,7 @@ export function useChat(
               createdAt: Date.now(),
               lastMessageAt: Date.now(),
               repoFullName: currentRepo || undefined,
+              branch: currentRepo ? (branchInfoRef.current?.currentBranch || branchInfoRef.current?.defaultBranch || 'main') : undefined,
             };
             setActiveChatId(newId);
             saveActiveChatId(newId);
@@ -498,6 +524,7 @@ export function useChat(
 
   const deleteAllChats = useCallback(() => {
     const currentRepo = repoRef.current;
+    const chatBranch = currentRepo ? (branchInfoRef.current?.currentBranch || branchInfoRef.current?.defaultBranch || 'main') : undefined;
     setConversations((prev) => {
       const kept: Record<string, Conversation> = {};
       for (const [cid, conv] of Object.entries(prev)) {
@@ -517,6 +544,7 @@ export function useChat(
         createdAt: Date.now(),
         lastMessageAt: Date.now(),
         repoFullName: currentRepo || undefined,
+        branch: chatBranch,
       };
 
       setActiveChatId(id);
@@ -923,7 +951,7 @@ export function useChat(
             if (toolCall.source === 'github' && !toolRepoFullName) {
               toolExecResult = { text: '[Tool Error] No active repo selected — please select a repo in the UI.' };
             } else {
-              toolExecResult = await executeAnyToolCall(toolCall, toolRepoFullName || '', sandboxIdRef.current);
+              toolExecResult = await executeAnyToolCall(toolCall, toolRepoFullName || '', sandboxIdRef.current, isMainProtectedRef.current, branchInfoRef.current?.defaultBranch);
             }
           }
 
@@ -1117,6 +1145,31 @@ export function useChat(
               return { ...card, data: { ...card.data, status: 'error', error: 'Sandbox expired. Start a new sandbox.' } as CommitReviewCardData };
             });
             return;
+          }
+
+          // Enforce Protect Main for UI-driven commits
+          if (isMainProtectedRef.current) {
+            try {
+              const branchResult = await execInSandbox(sandboxId, 'cd /workspace && git branch --show-current');
+              const currentBranch = branchResult.exitCode === 0 ? branchResult.stdout?.trim() : null;
+              const mainBranches = new Set(['main', 'master']);
+              const defBranch = branchInfoRef.current?.defaultBranch;
+              if (defBranch) mainBranches.add(defBranch);
+              if (!currentBranch || mainBranches.has(currentBranch)) {
+                updateCardInMessage(chatId, action.messageId, action.cardIndex, (card) => {
+                  if (card.type !== 'commit-review') return card;
+                  return { ...card, data: { ...card.data, status: 'error', error: 'Protect Main is enabled. Create a feature branch before committing.' } as CommitReviewCardData };
+                });
+                return;
+              }
+            } catch {
+              // Fail-safe: block if we can't determine the branch
+              updateCardInMessage(chatId, action.messageId, action.cardIndex, (card) => {
+                if (card.type !== 'commit-review') return card;
+                return { ...card, data: { ...card.data, status: 'error', error: 'Protect Main is enabled and branch could not be verified.' } as CommitReviewCardData };
+              });
+              return;
+            }
           }
 
           // Step 1: Mark as approved (prevents double-tap)
@@ -1336,6 +1389,9 @@ export function useChat(
     // Sandbox
     setSandboxId,
     setEnsureSandbox,
+
+    // Protect Main
+    setIsMainProtected,
 
     // AGENTS.md
     setAgentsMd,

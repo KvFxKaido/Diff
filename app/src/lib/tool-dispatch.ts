@@ -13,6 +13,7 @@ import { detectSandboxToolCall, executeSandboxToolCall, type SandboxToolCall } f
 import { detectScratchpadToolCall, type ScratchpadToolCall } from './scratchpad-tools';
 import { detectWebSearchToolCall, executeWebSearch, type WebSearchToolCall } from './web-search-tools';
 import { getActiveProvider } from './orchestrator';
+import { execInSandbox } from './sandbox-client';
 
 // ---------------------------------------------------------------------------
 // Shared: brace-counting JSON extractor (handles nested objects)
@@ -116,17 +117,53 @@ export function detectAnyToolCall(text: string): AnyToolCall | null {
   return null;
 }
 
+/** Tools that modify the main branch (commit/push). Blocked when Protect Main is active. */
+const PROTECTED_MAIN_TOOLS = new Set(['sandbox_prepare_commit', 'sandbox_push']);
+
+/**
+ * Check the current git branch in the sandbox. Returns the branch name or null on error.
+ */
+async function getSandboxBranch(sandboxId: string): Promise<string | null> {
+  try {
+    const result = await execInSandbox(sandboxId, 'cd /workspace && git branch --show-current');
+    if (result.exitCode === 0 && result.stdout?.trim()) {
+      return result.stdout.trim();
+    }
+  } catch {
+    // Best-effort — fail-safe (return null → will block)
+  }
+  return null;
+}
+
 /**
  * Execute a detected tool call through the appropriate handler.
  *
  * Note: 'scratchpad' and 'delegate' tools are handled at a higher level (useChat),
  * not here. They're detected here but executed in the chat hook.
+ *
+ * @param isMainProtected — when true, commit/push tools on the default branch are blocked.
+ * @param defaultBranch — the repo's default branch name (e.g. 'main', 'master').
  */
 export async function executeAnyToolCall(
   toolCall: AnyToolCall,
   allowedRepo: string,
   sandboxId: string | null,
+  isMainProtected?: boolean,
+  defaultBranch?: string,
 ): Promise<ToolExecutionResult> {
+  // Enforce Protect Main: block commit/push tools when on the default branch
+  if (isMainProtected && toolCall.source === 'sandbox' && PROTECTED_MAIN_TOOLS.has(toolCall.call.tool) && sandboxId) {
+    const currentBranch = await getSandboxBranch(sandboxId);
+    const mainBranches = new Set(['main', 'master']);
+    if (defaultBranch) mainBranches.add(defaultBranch);
+    // Block if we can't determine the branch (fail-safe) or if we're on the default branch
+    if (!currentBranch || mainBranches.has(currentBranch)) {
+      return {
+        text: `[Tool Error] Protect Main is enabled. Commits and pushes to the main/default branch are blocked. Create a new branch first (e.g. sandbox_exec with "git checkout -b feature/my-change"), then retry.`,
+      };
+    }
+  }
+
   switch (toolCall.source) {
     case 'github':
       return executeToolCall(toolCall.call, allowedRepo);

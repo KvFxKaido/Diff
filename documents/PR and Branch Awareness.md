@@ -1,6 +1,6 @@
 # PR & Branch Awareness — Mobile-First Git Model
 
-**Status:** Draft (Solo-First, Future-Neutral)
+**Status:** Sprint-Ready
 **Date:** 2026-02-11
 
 ---
@@ -43,6 +43,20 @@ Main is not sacred. It is simply the default starting branch.
 
 ---
 
+# Branch Switching
+
+Branches are visible and switchable in:
+- **History drawer** — branches listed with their chats, tap to switch
+- **Home page** — active branch shown, tap to switch
+
+Branch switching is for navigation and orientation only.
+Branch creation only happens via the header "Create Branch" action.
+No branch dashboard. No standalone branch management screen.
+
+Switching branches tears down the current sandbox and creates a fresh one on the target branch. This is deliberate — branching on mobile should feel like a conscious context switch, not a quick toggle. Clean state over speed.
+
+---
+
 # Header Lifecycle Control
 
 The header always shows:
@@ -63,9 +77,7 @@ If `active !== main`:
 [ Merge into main ]
 ```
 
-Branch switching exists only in the header.
-No branch dashboard.
-No history-based switching.
+Branch creation exists only in the header.
 
 ---
 
@@ -121,7 +133,7 @@ Push never runs `git merge` locally.
 
 "Merge into main" means:
 1. Push the active branch to remote (if not already pushed).
-2. Create a Pull Request against `main` via GitHub API.
+2. Create a Pull Request against `main` via GitHub API (or reuse an existing one).
 3. Merge the PR via GitHub API (merge commit strategy).
 
 GitHub creates the merge commit. Fast-forward merges are not used.
@@ -154,13 +166,17 @@ Commit flow includes:
 
 ---
 
-## Step 2 — Create Pull Request
+## Step 2 — Create or Reuse Pull Request
 
-Push creates a PR via GitHub API:
+Before creating a PR, Push checks for an existing open PR from this branch into `main`:
 
 ```
-main <- auth-refactor
+GET /repos/{owner}/{repo}/pulls?head={owner}:{branch}&base=main&state=open
 ```
+
+**If a PR already exists:** Push shows the existing PR. User may update the title/body or proceed as-is.
+
+**If no PR exists:** Push creates one via GitHub API.
 
 Agent proposes PR title and body:
 
@@ -198,7 +214,9 @@ UNSAFE blocks the merge. User may fix and retry.
 
 ## Step 4 — Merge
 
-If Auditor passes and no GitHub branch protection blocks exist:
+Push checks merge eligibility via the PR's `mergeable` and `mergeable_state` fields.
+
+If Auditor passes and PR is mergeable:
 
 ```
 Ready to merge `auth-refactor` into `main`.
@@ -209,7 +227,7 @@ Ready to merge `auth-refactor` into `main`.
 Merge uses GitHub's merge commit strategy (equivalent to `--no-ff`).
 GitHub creates the merge commit on the server.
 
-If branch protection rules require CI or reviews, Push shows the blocking status:
+**If branch protection blocks merge** (CI pending, reviews required):
 
 ```
 Cannot merge yet:
@@ -219,6 +237,15 @@ Cannot merge yet:
 [ Check again ]  [ Cancel ]
 ```
 
+**If the PR has merge conflicts:**
+
+```
+This branch has conflicts with main.
+
+[ Resolve on GitHub ]  [ Cancel ]
+```
+
+Push does not provide in-app conflict resolution.
 Push does not bypass branch protection. It surfaces the status and lets the user act.
 
 ---
@@ -242,6 +269,8 @@ Deletion is never automatic.
 # Chat Lifecycle
 
 Chats are permanently bound to the branch on which they were created.
+
+When switching to a branch that has existing chats, the user sees them in the history drawer and can resume any of them. No auto-resume — the user picks.
 
 After merge:
 - Branch chat receives a closure message.
@@ -326,6 +355,8 @@ Push intentionally enforces:
 - No local merges — all merges go through GitHub
 - No silent destructive operations
 - No stash abstraction
+- No in-app conflict resolution (escape hatch to GitHub)
+- Branch switch tears down sandbox (clean state, no carryover)
 - Branch-scoped chats forever
 - Branch protection rules are respected, never bypassed
 
@@ -340,6 +371,7 @@ Work on Active Branch.
 Commit freely.
 Push freely.
 Merge deliberately — always through GitHub.
+Switch branches in the history drawer.
 Close branches intentionally.
 Never hide state.
 

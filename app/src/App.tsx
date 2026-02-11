@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FolderOpen, Loader2, Download, Save, RotateCcw } from 'lucide-react';
+import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
@@ -17,6 +17,7 @@ import { fetchOllamaModels, fetchMistralModels } from '@/lib/model-catalog';
 import { useSandbox } from '@/hooks/useSandbox';
 import { useScratchpad } from '@/hooks/useScratchpad';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useProtectMain } from '@/hooks/useProtectMain';
 import { buildWorkspaceContext, sanitizeProjectInstructions } from '@/lib/workspace-context';
 import { readFromSandbox, execInSandbox, downloadFromSandbox, writeToSandbox } from '@/lib/sandbox-client';
 import { fetchProjectInstructions } from '@/lib/github-tools';
@@ -41,6 +42,8 @@ import { HomeScreen } from '@/sections/HomeScreen';
 import { FileBrowser } from '@/sections/FileBrowser';
 import type { AppScreen, RepoWithActivity, SandboxStateCardData } from '@/types';
 import { SettingsSheet } from '@/components/SettingsSheet';
+import { BranchCreateSheet } from '@/components/chat/BranchCreateSheet';
+import { MergeFlowSheet } from '@/components/chat/MergeFlowSheet';
 import './App.css';
 
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
@@ -104,7 +107,7 @@ const AGENTS_MD_TEMPLATE = `# AGENTS.md
 `;
 
 function App() {
-  const { activeRepo, setActiveRepo, clearActiveRepo } = useActiveRepo();
+  const { activeRepo, setActiveRepo, clearActiveRepo, setCurrentBranch } = useActiveRepo();
   const scratchpad = useScratchpad(activeRepo?.full_name ?? null);
   const [isWorkspacePanelOpen, setIsWorkspacePanelOpen] = useState(false);
   const [isSandboxMode, setIsSandboxMode] = useState(false);
@@ -132,6 +135,7 @@ function App() {
     handleCardAction,
     contextUsage,
     abortStream,
+    setIsMainProtected,
   } = useChat(
     activeRepo?.full_name ?? null,
     {
@@ -151,7 +155,20 @@ function App() {
         toast.success(`Promoted to GitHub: ${repo.full_name}`);
       },
     },
+    {
+      currentBranch: activeRepo?.current_branch || activeRepo?.default_branch,
+      defaultBranch: activeRepo?.default_branch,
+    },
   );
+
+  // Protect Main — blocks commits/pushes to the default branch
+  const protectMain = useProtectMain(activeRepo?.full_name ?? undefined);
+
+  // Sync protect-main state to useChat (ref-based, non-reactive)
+  useEffect(() => {
+    setIsMainProtected(protectMain.isProtected);
+  }, [protectMain.isProtected, setIsMainProtected]);
+
   // PAT-based auth (fallback)
   const {
     token: patToken,
@@ -215,6 +232,14 @@ function App() {
   const [creatingAgentsMdWithAI, setCreatingAgentsMdWithAI] = useState(false);
   const [installIdInput, setInstallIdInput] = useState('');
   const [showInstallIdInput, setShowInstallIdInput] = useState(false);
+
+  // Branch lifecycle controls (sheets wired in Tasks 5 & 6)
+  const [showBranchCreate, setShowBranchCreate] = useState(false);
+  const [showMergeFlow, setShowMergeFlow] = useState(false);
+
+  // Derived branch values
+  const currentBranch = activeRepo?.current_branch || activeRepo?.default_branch || 'main';
+  const isOnMain = currentBranch === (activeRepo?.default_branch || 'main');
 
   // Sandbox state for settings display
   const [sandboxState, setSandboxState] = useState<SandboxStateCardData | null>(null);
@@ -437,7 +462,7 @@ function App() {
     if (!targetSandboxId) {
       targetSandboxId = isSandboxMode
         ? await sandbox.start('', 'main')
-        : (activeRepo ? await sandbox.start(activeRepo.full_name, activeRepo.default_branch) : null);
+        : (activeRepo ? await sandbox.start(activeRepo.full_name, activeRepo.current_branch || activeRepo.default_branch) : null);
     }
     if (!targetSandboxId) {
       toast.error('Sandbox is not ready');
@@ -503,7 +528,7 @@ function App() {
     try {
       let id = sandbox.sandboxId;
       if (!id) {
-        id = await sandbox.start(activeRepo.full_name, activeRepo.default_branch);
+        id = await sandbox.start(activeRepo.full_name, activeRepo.current_branch || activeRepo.default_branch);
       }
       if (!id) {
         toast.error('Sandbox is not ready yet. Try again in a moment.');
@@ -610,6 +635,7 @@ function App() {
         full_name: repo.full_name,
         owner: repo.owner,
         default_branch: repo.default_branch,
+        current_branch: repo.default_branch,
         private: repo.private,
       });
     },
@@ -640,10 +666,14 @@ function App() {
     const repo = repos.find((r) => r.full_name === conv.repoFullName);
     if (!repo) return;
     handleSelectRepo(repo);
+    // Restore the branch context from the conversation so the chat filter includes it
+    if (conv.branch) {
+      setCurrentBranch(conv.branch);
+    }
     requestAnimationFrame(() => {
       switchChat(chatId);
     });
-  }, [conversations, repos, handleSelectRepo, switchChat]);
+  }, [conversations, repos, handleSelectRepo, switchChat, setCurrentBranch]);
 
   const handleOpenSettingsFromDrawer = useCallback((tab: 'you' | 'workspace' | 'ai') => {
     setSettingsTab(tab);
@@ -815,12 +845,31 @@ function App() {
     if (sandbox.sandboxId) return sandbox.sandboxId;
     if (isSandboxMode) return sandbox.start('', 'main');
     if (!activeRepo) return null;
-    return sandbox.start(activeRepo.full_name, activeRepo.default_branch);
+    return sandbox.start(activeRepo.full_name, activeRepo.current_branch || activeRepo.default_branch);
   }, [sandbox, activeRepo, isSandboxMode]);
 
   useEffect(() => {
     setEnsureSandbox(ensureSandbox);
   }, [ensureSandbox, setEnsureSandbox]);
+
+  // Branch switching: tear down sandbox when current_branch changes so it recreates on the new branch.
+  // Uses a ref to track previous branch and skip the initial mount.
+  const prevBranchRef = useRef<string | undefined>(activeRepo?.current_branch);
+  useEffect(() => {
+    const currentBranchValue = activeRepo?.current_branch;
+    const prevBranch = prevBranchRef.current;
+    prevBranchRef.current = currentBranchValue;
+
+    // Skip when there's no meaningful change
+    if (prevBranch === currentBranchValue) return;
+    // Don't tear down in sandbox mode (no repo-based sandbox)
+    if (isSandboxMode) return;
+    // Only tear down if there was a previous branch (not initial repo selection)
+    if (prevBranch === undefined) return;
+
+    console.log(`[App] Branch changed: ${prevBranch} → ${currentBranchValue}, tearing down sandbox`);
+    void sandbox.stop();
+  }, [activeRepo?.current_branch, isSandboxMode, sandbox]);
 
   // Auto-start sandbox when entering sandbox mode
   const { status: sandboxStatus, sandboxId: currentSandboxId, start: startSandbox } = sandbox;
@@ -1026,6 +1075,9 @@ function App() {
               onSandboxMode={isSandboxMode ? undefined : handleSandboxMode}
               isSandboxMode={isSandboxMode}
               onExitSandboxMode={handleExitSandboxMode}
+              currentBranch={activeRepo?.current_branch || activeRepo?.default_branch}
+              defaultBranch={activeRepo?.default_branch}
+              setCurrentBranch={setCurrentBranch}
             />
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold text-[#f5f7ff]">
@@ -1036,6 +1088,15 @@ function App() {
               </p>
             </div>
           </div>
+          {/* Branch badge — shown when a repo is active and not in sandbox mode */}
+          {activeRepo && !isSandboxMode && (
+            <div className="flex items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 px-2 py-1 backdrop-blur-xl">
+              <GitBranch className="h-3 w-3 text-[#5f6b80]" />
+              <span className="max-w-[100px] truncate text-[10px] font-medium text-[#8b96aa]">
+                {currentBranch}
+              </span>
+            </div>
+          )}
           {isSandboxMode && (
               <>
                 <span className="text-[10px] text-push-fg-dim">ephemeral</span>
@@ -1097,6 +1158,30 @@ function App() {
             )}
         </div>
         <div className="flex items-center gap-2">
+          {/* Branch action button — Create Branch (on main) or Merge (on feature branch) */}
+          {activeRepo && !isSandboxMode && (
+            isOnMain ? (
+              <button
+                onClick={() => setShowBranchCreate(true)}
+                className="flex h-8 items-center gap-1 rounded-full border border-white/[0.06] bg-[#0a0e16]/80 px-2.5 backdrop-blur-xl text-[11px] font-medium text-push-fg-dim transition-all duration-200 hover:text-[#d1d8e6] active:scale-95"
+                aria-label="Create branch"
+                title="Create a new branch"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Branch
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowMergeFlow(true)}
+                className="flex h-8 items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-950/30 px-2.5 backdrop-blur-xl text-[11px] font-medium text-emerald-400 transition-all duration-200 hover:bg-emerald-950/50 hover:text-emerald-300 active:scale-95"
+                aria-label={`Merge ${currentBranch} into ${activeRepo.default_branch}`}
+                title={`Merge ${currentBranch} into ${activeRepo.default_branch}`}
+              >
+                <GitMerge className="h-3.5 w-3.5" />
+                Merge
+              </button>
+            )
+          )}
           {/* File browser */}
           {(activeRepo || isSandboxMode) && (
             <button
@@ -1349,12 +1434,38 @@ function App() {
           sandboxState,
           sandboxStateLoading,
           fetchSandboxState,
+          protectMainGlobal: protectMain.globalDefault,
+          setProtectMainGlobal: protectMain.setGlobalDefault,
+          protectMainRepoOverride: protectMain.repoOverride,
+          setProtectMainRepoOverride: protectMain.setRepoOverride,
+          activeRepoFullName: activeRepo?.full_name ?? null,
         }}
         data={{
           activeRepo,
           deleteAllChats,
         }}
       />
+
+      {/* Branch creation sheet */}
+      {activeRepo && (
+        <BranchCreateSheet
+          open={showBranchCreate}
+          onOpenChange={setShowBranchCreate}
+          activeRepo={activeRepo}
+          setCurrentBranch={setCurrentBranch}
+        />
+      )}
+
+      {/* Merge flow sheet */}
+      {activeRepo && (
+        <MergeFlowSheet
+          open={showMergeFlow}
+          onOpenChange={setShowMergeFlow}
+          activeRepo={activeRepo}
+          sandboxId={sandbox.sandboxId}
+          setCurrentBranch={setCurrentBranch}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Box,
+  GitBranch,
   GitCommit,
   GitPullRequest,
   History,
@@ -10,7 +11,7 @@ import {
   Sparkles,
   Loader2,
 } from 'lucide-react';
-import type { Conversation, GitHubUser, RepoWithActivity } from '@/types';
+import type { ActiveRepo, Conversation, GitHubUser, RepoWithActivity } from '@/types';
 
 interface HomeScreenProps {
   repos: RepoWithActivity[];
@@ -85,6 +86,17 @@ export function HomeScreen({
   const [showAllRepos, setShowAllRepos] = useState(false);
   const [search, setSearch] = useState('');
 
+  // Read the active repo from localStorage to get the current branch
+  const activeRepoInfo = useMemo<ActiveRepo | null>(() => {
+    try {
+      const raw = localStorage.getItem('active_repo');
+      if (!raw) return null;
+      return JSON.parse(raw) as ActiveRepo;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const repoChatMeta = useMemo(() => {
     const meta = new Map<string, RepoChatMeta>();
     for (const conv of Object.values(conversations)) {
@@ -142,6 +154,8 @@ export function HomeScreen({
 
   const renderRepoButton = (repo: RepoWithActivity) => {
     const chatMeta = repoChatMeta.get(repo.full_name);
+    const isActiveRepo = activeRepoInfo?.full_name === repo.full_name;
+    const activeBranch = isActiveRepo ? activeRepoInfo?.current_branch : undefined;
     return (
       <button
         key={repo.id}
@@ -160,6 +174,14 @@ export function HomeScreen({
           )}
         </div>
 
+        {/* Branch badge — shows the last active branch for the active repo */}
+        {activeBranch && activeBranch !== repo.default_branch && (
+          <span className="inline-flex w-fit items-center gap-1 rounded-md bg-[#1a1f2e] px-1.5 py-0.5 text-[11px] text-[#9db8df]">
+            <GitBranch className="h-3 w-3" />
+            <span className="max-w-[160px] truncate">{activeBranch}</span>
+          </span>
+        )}
+
         {repo.description && (
           <p className="line-clamp-1 text-xs text-[#788396]">
             {repo.description}
@@ -177,7 +199,7 @@ export function HomeScreen({
             </span>
           )}
           {repo.activity.open_prs > 0 && (
-            <span className="flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[#58a6ff]">
               <GitPullRequest className="h-3 w-3" />
               {repo.activity.open_prs}
             </span>
@@ -252,8 +274,17 @@ export function HomeScreen({
                 <p className="mt-0.5 truncate text-xs text-[#9ab4d4]">
                   {latestConversation.title}
                 </p>
-                <p className="mt-1 text-[11px] text-[#6f88aa]">
-                  {latestConversationRepo.name} · {timeAgoFromTimestamp(latestConversation.lastMessageAt)}
+                <p className="mt-1 flex items-center gap-1 text-[11px] text-[#6f88aa]">
+                  <span>{latestConversationRepo.name}</span>
+                  {latestConversation.branch && (
+                    <>
+                      <span className="text-[#4a6080]">/</span>
+                      <GitBranch className="h-2.5 w-2.5 shrink-0" />
+                      <span className="max-w-[120px] truncate">{latestConversation.branch}</span>
+                    </>
+                  )}
+                  <span className="text-[#4a6080]">·</span>
+                  <span>{timeAgoFromTimestamp(latestConversation.lastMessageAt)}</span>
                 </p>
               </div>
             </button>

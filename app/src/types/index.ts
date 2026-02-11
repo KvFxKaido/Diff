@@ -351,6 +351,8 @@ export interface Conversation {
   createdAt: number;
   lastMessageAt: number;
   repoFullName?: string;  // "owner/repo". Undefined = unscoped (legacy/demo).
+  /** The branch that was active when the conversation was created. Optional for backwards compat. */
+  branch?: string;
   /** The AI provider that was used when the first message was sent. Locked for the whole conversation. */
   provider?: AIProviderType;
   /** The model id used on first message for the locked provider (if known). */

@@ -11,6 +11,7 @@ import type { AIProviderType, SandboxStateCardData } from '@/types';
 import type { PreferredProvider } from '@/lib/providers';
 import type { ContextMode } from '@/lib/orchestrator';
 import type { SandboxStartMode } from '@/lib/sandbox-start-mode';
+import type { RepoOverride } from '@/hooks/useProtectMain';
 
 const PROVIDER_LABELS: Record<AIProviderType, string> = {
   ollama: 'Ollama',
@@ -118,6 +119,12 @@ export interface SettingsWorkspaceProps {
   sandboxState: SandboxStateCardData | null;
   sandboxStateLoading: boolean;
   fetchSandboxState: (id: string) => void;
+  // Protect Main
+  protectMainGlobal: boolean;
+  setProtectMainGlobal: (value: boolean) => void;
+  protectMainRepoOverride: RepoOverride;
+  setProtectMainRepoOverride: (value: RepoOverride) => void;
+  activeRepoFullName: string | null;
 }
 
 export interface SettingsDataProps {
@@ -515,6 +522,91 @@ export function SettingsSheet({
             <p className="text-[11px] text-push-fg-secondary">
               Smart prewarms sandbox for likely coding prompts. Always prewarms on every message.
             </p>
+          </div>
+
+          {/* Protect Main */}
+          <div className="space-y-3 pt-2 border-t border-push-edge">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-push-fg">
+                Protect Main
+              </label>
+              <span className="text-xs text-push-fg-secondary">
+                {workspace.protectMainGlobal ? 'On' : 'Off'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => workspace.setProtectMainGlobal(false)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  !workspace.protectMainGlobal
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                    : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
+                }`}
+              >
+                Off
+              </button>
+              <button
+                type="button"
+                onClick={() => workspace.setProtectMainGlobal(true)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  workspace.protectMainGlobal
+                    ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                    : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
+                }`}
+              >
+                On
+              </button>
+            </div>
+            <p className="text-[11px] text-push-fg-secondary">
+              When enabled, commits and pushes to the main/default branch are blocked. Create a feature branch first.
+            </p>
+
+            {workspace.activeRepoFullName && (
+              <div className="space-y-2 pt-1">
+                <label className="text-xs font-medium text-push-fg-secondary">
+                  Override for {workspace.activeRepoFullName.split('/').pop()}
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => workspace.setProtectMainRepoOverride('inherit')}
+                    className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                      workspace.protectMainRepoOverride === 'inherit'
+                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                        : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
+                    }`}
+                  >
+                    Inherit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => workspace.setProtectMainRepoOverride('always')}
+                    className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                      workspace.protectMainRepoOverride === 'always'
+                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                        : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
+                    }`}
+                  >
+                    Always
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => workspace.setProtectMainRepoOverride('never')}
+                    className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                      workspace.protectMainRepoOverride === 'never'
+                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                        : 'border-push-edge bg-push-surface text-push-fg-muted hover:text-push-fg-secondary'
+                    }`}
+                  >
+                    Never
+                  </button>
+                </div>
+                <p className="text-[11px] text-push-fg-dim">
+                  Inherit uses the global default. Always/Never overrides it for this repo only.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Sandbox State */}

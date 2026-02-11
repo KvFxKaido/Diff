@@ -7,6 +7,7 @@ import {
   Cpu,
   FolderCog,
   FolderGit2,
+  GitBranch,
   House,
   Menu,
   Pencil,
@@ -35,6 +36,9 @@ interface RepoChatDrawerProps {
   onSandboxMode?: () => void;
   isSandboxMode?: boolean;
   onExitSandboxMode?: () => void;
+  currentBranch?: string;
+  defaultBranch?: string;
+  setCurrentBranch?: (branch: string) => void;
 }
 
 const EMPTY_CHATS: Conversation[] = [];
@@ -66,6 +70,9 @@ export function RepoChatDrawer({
   onSandboxMode,
   isSandboxMode = false,
   onExitSandboxMode,
+  currentBranch,
+  defaultBranch,
+  setCurrentBranch,
 }: RepoChatDrawerProps) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'history' | 'settings'>('history');
@@ -119,9 +126,13 @@ export function RepoChatDrawer({
     setExpandedRepos((prev) => ({ ...prev, [repoFullName]: !(prev[repoFullName] ?? fallbackOpen) }));
   };
 
-  const openChat = (chatId: string, repo?: RepoWithActivity) => {
+  const openChat = (chatId: string, repo?: RepoWithActivity, chatBranch?: string) => {
     if (repo && activeRepo?.id !== repo.id) {
       onSelectRepo(repo);
+    }
+    // Switch branch if the chat belongs to a different branch
+    if (chatBranch && setCurrentBranch && chatBranch !== currentBranch) {
+      setCurrentBranch(chatBranch);
     }
     onSwitchChat(chatId);
     setOpen(false);
@@ -220,7 +231,7 @@ export function RepoChatDrawer({
         ) : (
           <>
             <button
-              onClick={() => openChat(chat.id, repo)}
+              onClick={() => openChat(chat.id, repo, chat.branch)}
               className="min-w-0 flex-1 px-2.5 py-2 text-left"
             >
               <p className={`truncate text-[12px] ${isActiveChat ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
@@ -379,7 +390,63 @@ export function RepoChatDrawer({
                               No chats yet
                             </div>
                           ) : (
-                            chats.map((chat) => renderChatRow(chat, repo))
+                            (() => {
+                              // Group chats by branch
+                              const branchMap = new Map<string, Conversation[]>();
+                              for (const chat of chats) {
+                                const b = chat.branch || defaultBranch || 'main';
+                                const arr = branchMap.get(b) || [];
+                                arr.push(chat);
+                                branchMap.set(b, arr);
+                              }
+                              const branchNames = Array.from(branchMap.keys());
+                              const hasMultipleBranches = branchNames.length > 1;
+
+                              if (!hasMultipleBranches) {
+                                // Single branch — no sub-headers needed
+                                return chats.map((chat) => renderChatRow(chat, repo));
+                              }
+
+                              // Sort branches: active branch first, then default branch, then rest alphabetically
+                              const activeBranch = isActiveRepo ? currentBranch : undefined;
+                              branchNames.sort((a, b) => {
+                                if (a === activeBranch) return -1;
+                                if (b === activeBranch) return 1;
+                                const defBranch = defaultBranch || 'main';
+                                if (a === defBranch) return -1;
+                                if (b === defBranch) return 1;
+                                return a.localeCompare(b);
+                              });
+
+                              return branchNames.map((branchName) => {
+                                const branchChats = branchMap.get(branchName) || [];
+                                const isActiveBranch = isActiveRepo && branchName === currentBranch;
+                                return (
+                                  <div key={branchName}>
+                                    <button
+                                      onClick={() => {
+                                        if (setCurrentBranch && branchName !== currentBranch) {
+                                          if (!isActiveRepo) {
+                                            onSelectRepo(repo);
+                                          }
+                                          setCurrentBranch(branchName);
+                                        }
+                                      }}
+                                      className="flex w-full items-center gap-1.5 px-1.5 pb-0.5 pt-2 text-left"
+                                    >
+                                      <GitBranch className={`h-3 w-3 shrink-0 ${isActiveBranch ? 'text-push-link' : 'text-push-fg-dim'}`} />
+                                      <span className={`truncate text-[10px] font-medium ${isActiveBranch ? 'text-push-link' : 'text-push-fg-dim'}`}>
+                                        {branchName}
+                                      </span>
+                                      <span className="text-[10px] text-push-fg-dim">
+                                        ({branchChats.length})
+                                      </span>
+                                    </button>
+                                    {branchChats.map((chat) => renderChatRow(chat, repo))}
+                                  </div>
+                                );
+                              });
+                            })()
                           )}
                         </div>
                       )}
