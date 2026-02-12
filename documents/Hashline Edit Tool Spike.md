@@ -16,7 +16,7 @@ Can Bölük's article "The Harness Problem" ([blog.can.ac](https://blog.can.ac/2
 
 **Core insight:** Current edit tools (`apply_patch`, `str_replace`, Cursor's 70B merge model) all force the model to reproduce content it already saw to prove it knows what it's editing. When reproduction fails (whitespace, exact match, partial recall), the edit fails, and users blame the model instead of the harness.
 
-**Hashline approach:** Tag every line with a 2-3 character content hash when the model reads files. The model references tags (`replace line 2:f1`, `insert after 3:0e`) instead of reproducing exact text. If the file changed since last read, the hash won't match and the edit is rejected before corruption.
+**Hashline approach:** Tag every line with a 4-character content hash when the model reads files. The model references tags (`replace line 2:bR7p`, `insert after 3:0eXm`) instead of reproducing exact text. If the file changed since last read, the hash won't match and the edit is rejected before corruption.
 
 ## Why This Matters for Push
 
@@ -41,7 +41,7 @@ Push has unique advantages for testing hashline:
 - Large files risk truncation (MAX_TOOL_RESULT_SIZE = 24k chars)
 - No way to express partial edits
 - Agent retry loops burn tokens
-- Coder timeout (180s) includes retry overhead
+- Coder timeout (90s/round) eaten by retry overhead
 
 ## Hashline Design
 
@@ -50,17 +50,17 @@ Push has unique advantages for testing hashline:
 When the model reads a file via `sandbox_read_file`, each line gets tagged:
 
 ```
-11:a3|function hello() {
-22:f1|  return "world";
-33:0e|}
+1:a3Kf|function hello() {
+2:bR7p|  return "world";
+3:0eXm|}
 ```
 
-Format: `{line_number}:{hash}|{content}`
+Format: `{line_number}:{4-char hash}|{content}`
 
 **Hash properties:**
-- 2-3 chars (base62: `[0-9a-zA-Z]`)
-- Derived from line content (stable)
-- Collision-resistant within typical file sizes
+- 4 chars fixed-width (base62: `[0-9a-zA-Z]`, from 24 bits of CRC32)
+- Derived from line content only (stable across line moves)
+- 24-bit namespace = 16.7M values (collision-free for any practical file size)
 - NOT cryptographic (speed matters, security doesn't)
 
 ### Edit Operations
@@ -75,18 +75,18 @@ New tool: `sandbox_edit_file(path, edits)`
     "edits": [
       {
         "type": "replace_line",
-        "ref": "22:f1",
+        "ref": "2:bR7p",
         "new_content": "  return 'hello';"
       },
       {
         "type": "insert_after",
-        "ref": "33:0e",
+        "ref": "3:0eXm",
         "new_content": "\nfunction goodbye() {\n  return 'bye';\n}"
       },
       {
         "type": "replace_range",
-        "start_ref": "11:a3",
-        "end_ref": "33:0e",
+        "start_ref": "1:a3Kf",
+        "end_ref": "3:0eXm",
         "new_content": "export default {\n  hello: () => 'world'\n};"
       }
     ]
@@ -106,18 +106,20 @@ New tool: `sandbox_edit_file(path, edits)`
 1. Read current file
 2. Hash each line
 3. For each edit, verify ref hash matches current content
-4. If any mismatch → abort entire edit batch with staleness error
-5. If all match → resolve all refs to line numbers, then apply edits **bottom-to-top** (highest line numbers first, so insertions/deletions don't shift earlier refs)
-6. Return new file with updated hashline annotations (agent needs fresh refs for subsequent edits; UI card can show a diff)
+4. If any mismatch → abort with staleness error (include failing ref, expected vs actual hash, and fresh nearby refs ±5 lines so the agent can retry without a full re-read)
+5. Reject overlapping edits: if any two edits target the same line or overlapping ranges, or multiple inserts target the same ref, abort the batch. Deterministic rules prevent ambiguous application order.
+6. If all valid → resolve all refs to line numbers, then apply edits **bottom-to-top** (highest line numbers first, so insertions/deletions don't shift earlier refs)
+7. Return **touched-window response**: the edited region ±5 lines of context with fresh hashline refs, plus a unified diff for the UI card. Optionally accept `full_refresh: true` to get the entire annotated file (for small files or when the agent needs full context).
 
-### Staleness Detection (Free)
+### Staleness Detection
 
-If Coder references `2:f1` but Auditor sees a different hash for line 2, that's an automatic signal that:
-- Working tree is dirty
-- File was modified between read and edit
-- Context is stale
+Two layers:
 
-No additional staleness mechanism needed — the hash mismatch is the signal.
+1. **File-level fingerprint** — `sandbox_read_file` returns a `file_hash` (SHA-256 of full content). `sandbox_edit_file` accepts this fingerprint and rejects immediately on mismatch — a cheap fast-path check that catches wholesale replacement, reordering, or external edits without parsing individual lines.
+
+2. **Line-level hash** — Per-line content hashes catch specific stale lines even when the file fingerprint passes (e.g., a single line was modified between read and edit). The hash mismatch pinpoints *which* line is stale.
+
+Together: file fingerprint is the fast-path gate; line hashes are the precise diagnostic.
 
 ### Backward Compatibility
 
@@ -138,7 +140,7 @@ Deprecation path:
 Add hashline utilities:
 ```python
 def hash_line(content: str) -> str:
-    """2-3 char base62 hash of line content (CRC16 or FNV-1a)"""
+    """4-char fixed-width base62 hash from 24 bits of CRC32"""
     pass
 
 def annotate_file(content: str) -> str:
@@ -164,11 +166,17 @@ def edit_file(data: dict):
     pass
 ```
 
-**Estimated effort:** 4-6 hours
-- Hash function (CRC16 via zlib.crc32, mod to base62)
-- Edit validation logic
+**Design constraints:**
+- **Preserve EOL style:** Detect original line endings (CRLF vs LF) and trailing newline on read; preserve them through annotation and edit application. `splitlines()` + `"\n".join()` silently normalizes — use explicit handling to avoid noisy diffs.
+- **Rich error responses:** On failure, return `{ ok: false, error: "stale_ref", failing_edit_index: 1, failing_ref: "2:bR7p", expected_hash: "bR7p", actual_hash: "xK4m", fresh_refs: [...] }`. Include fresh nearby refs (±5 lines around the failing ref) so the agent can retry without a full re-read.
+- **Overlap rejection:** Detect and reject ambiguous edit batches (overlapping ranges, duplicate refs) before applying anything.
+
+**Estimated effort:** 5-7 hours
+- Hash function (24-bit CRC32, base62-encode to 4-char fixed-width)
+- Edit validation logic (including overlap/conflict detection)
 - Edit application (line replacement, insertion, deletion)
-- Error handling (staleness, invalid refs)
+- Error handling (staleness, invalid refs, rich error objects)
+- EOL preservation
 
 ### Phase 2: Frontend (TypeScript)
 
@@ -209,7 +217,7 @@ Update `validateSandboxToolCall` and `executeSandboxToolCall`.
 Update `SANDBOX_TOOL_PROTOCOL` prompt:
 ```markdown
 - sandbox_edit_file(path, edits) — Apply precise line-based edits using hashline references.
-  When you read a file, each line has a tag like `22:f1|content`. Reference these tags
+  When you read a file, each line has a tag like `22:a3Kf|content`. Reference these tags
   in your edits instead of reproducing content. If the file changed since you read it,
   the edit will be rejected (staleness protection).
 ```
@@ -285,7 +293,7 @@ Update `CODER_SYSTEM_PROMPT` in `app/src/lib/coder-agent.ts`:
 
 ```markdown
 When editing files:
-1. Use sandbox_read_file to see current content (lines will be tagged like `22:f1|content`)
+1. Use sandbox_read_file to see current content (lines will be tagged like `22:a3Kf|content`)
 2. Use sandbox_edit_file to make changes by referencing line tags
 3. Do NOT reproduce entire files with sandbox_write_file unless creating new files
 4. Multiple edits in one call are applied atomically
@@ -293,8 +301,8 @@ When editing files:
 
 Example workflow:
 - sandbox_read_file("/workspace/src/app.ts")
-- Review tagged content: `11:a3|function foo() {`
-- sandbox_edit_file with edits: `[{type: "replace_line", ref: "11:a3", new_content: "function bar() {"}]`
+- Review tagged content: `11:a3Kf|function foo() {`
+- sandbox_edit_file with edits: `[{type: "replace_line", ref: "11:a3Kf", new_content: "function bar() {"}]`
 ```
 
 **Estimated effort:** 1 hour
@@ -325,19 +333,30 @@ describe('hashline integration', () => {
 });
 ```
 
-**Estimated effort:** 3-4 hours
+Add property/fuzz tests in `sandbox/test_hashline.py`:
+```python
+# Property tests (hypothesis or similar):
+# - annotate → strip → original content (round-trip)
+# - apply_edits on random valid refs never corrupts
+# - overlapping edits always rejected
+# - stale refs always detected
+# - EOL style preserved through annotate + edit cycle
+```
+
+**Estimated effort:** 4-6 hours
 
 ## Total Implementation Effort
 
-**Estimated:** 14-20 hours (2-3 focused work sessions)
+**Estimated:** 20-28 hours (3-4 focused work sessions)
 
 Breakdown:
-- Backend hashline utils + endpoint: 4-6h
+- Backend hashline utils + endpoint + EOL handling: 5-7h
 - Frontend tool definition + client: 3-4h
 - Worker routing: 0.5h
 - File read annotation + range reads: 2-3h
 - Prompt engineering: 1h
-- Testing: 3-4h
+- Testing (unit + property/fuzz tests): 4-6h
+- Telemetry instrumentation: 2-3h
 
 **Prerequisite:** Run micro-test (1-2h) to validate that each provider can emit valid hashline edits from prompt examples before committing to the full build.
 
@@ -345,10 +364,12 @@ Breakdown:
 
 ### Risk: Hash collisions in large files
 
-**Likelihood:** Low (CRC16 over 65k values, typical files <1000 lines)
+**Likelihood:** Negligible (24-bit CRC32 → 16.7M values, typical files <1000 lines)
+
+Birthday problem collision probability: <0.003% at 1000 lines. Effectively zero for practical use.
 
 **Mitigation:**
-- Use 3-char base62 (238k namespace) instead of 2-char (3.8k)
+- 4-char fixed-width base62 from 24 bits of CRC32 (16.7M namespace)
 - Hash is **content-only** (no line number baked in) — the ref format `line_number:hash` is already unique even for identical lines. Including line number in the hash would make every ref brittle to insertions (adding a blank line above would invalidate all subsequent hashes even though content didn't change)
 - Log collision rate in metrics
 
@@ -385,9 +406,9 @@ The models haven't been trained on this format. Bölük designed his format to b
 
 ### Risk: Token overhead on file reads
 
-**Likelihood:** Certain — every line gets ~6-8 chars of prefix (`22:f1|`)
+**Likelihood:** Certain — every line gets ~8-10 chars of prefix (`22:a3Kf|`)
 
-For a 500-line file, that's 3-4KB of annotation against `MAX_TOOL_RESULT_SIZE` of 24K chars (12-16% of budget consumed by metadata). The ~20% token savings from fewer retries come from a different axis (avoided retry loops, not the read path). On the read path, hashline *adds* tokens.
+For a 500-line file, that's 4-5KB of annotation against `MAX_TOOL_RESULT_SIZE` of 24K chars (17-21% of budget consumed by metadata). The ~20% token savings from fewer retries come from a different axis (avoided retry loops, not the read path). On the read path, hashline *adds* tokens. Partially mitigated by touched-window responses (edits return only the affected region, not the full annotated file).
 
 **Mitigation:**
 - Only annotate when the Coder reads a file (not Orchestrator context reads)
@@ -419,6 +440,7 @@ For a 500-line file, that's 3-4KB of annotation against `MAX_TOOL_RESULT_SIZE` o
 - Implement backend hashline utils + endpoint
 - Implement frontend tool + client
 - Add Worker route
+- **Add telemetry instrumentation from day 1** (edit success/failure rate, staleness frequency, token counts, latency) — Week 3 comparison is meaningless without baseline data
 - Manual testing with real sandbox
 
 ### Week 2: Integration
@@ -442,6 +464,12 @@ For a 500-line file, that's 3-4KB of annotation against `MAX_TOOL_RESULT_SIZE` o
 - Compare metrics (hashline vs write tool)
 - Expand to 50% if metrics improve
 - Full rollout if 50% cohort shows clear gains
+
+**Explicit success criteria (gate before full rollout):**
+- Edit apply success rate ≥ +10 percentage points over `sandbox_write_file` baseline
+- Agent retry loops per task ≤ −20% vs baseline
+- No truncation regression (files that succeeded before must not fail due to annotation overhead)
+- p99 latency for edit operations < 2× current write latency
 
 ## Benchmarking Plan (Deprioritized)
 
@@ -469,11 +497,13 @@ To replicate Can Bölük's methodology:
 
 ## Resolved Questions
 
-1. **Hash algorithm** → **CRC16 via zlib.** Stdlib, fast, good distribution. See Appendix.
-2. **Base encoding** → **Base62.** Alphanumeric-only is safer for LLM tokenization — no `+`/`/`/`=` chars that might confuse models or get mangled in JSON.
+1. **Hash algorithm** → **24-bit CRC32 via zlib.** Take 24 bits of `zlib.crc32()`, base62-encode to 4 chars fixed-width. Stdlib, fast, 16.7M namespace. See Appendix.
+2. **Base encoding** → **Base62, 4-char fixed-width.** Alphanumeric-only is safer for LLM tokenization — no `+`/`/`/`=` chars. Fixed-width avoids variable-length ambiguity.
 3. **Collision handling** → **No line number in hash.** The ref format `line_number:hash` is already unique. Baking line number into the hash makes refs brittle to insertions. See Risks section.
-4. **Multi-edit atomicity** → **All-or-none.** Partial application leaves files in states the model can't reason about.
-5. **Diff output** → **Annotated full file.** The agent needs updated refs for subsequent edits. Diff is only useful for the UI card.
+4. **Multi-edit atomicity** → **All-or-none.** Partial application leaves files in states the model can't reason about. Overlapping/ambiguous edits are also rejected.
+5. **Edit response** → **Touched-window.** Return edited region ±5 lines with fresh refs + unified diff for UI. Full annotated file available via `full_refresh: true` flag.
+6. **Staleness** → **Two-layer.** File-level SHA-256 fingerprint (fast-path gate) + per-line content hashes (precise diagnostic). See Staleness Detection section.
+7. **EOL handling** → **Preserve original.** Detect and preserve CRLF/LF and trailing newline through annotation and edit application.
 
 ## Related Work
 
@@ -485,36 +515,20 @@ To replicate Can Bölük's methodology:
 
 ## Appendix: Hash Function Candidates
 
-### Option A: CRC16 (via zlib)
+### Chosen: 24-bit CRC32 (via zlib)
 
 ```python
 import zlib
 
 def hash_line(content: str) -> str:
-    crc = zlib.crc32(content.encode('utf-8')) & 0xFFFF  # 16-bit
-    return base62_encode(crc)  # 2-3 chars
+    """4-char fixed-width base62 hash from 24 bits of CRC32."""
+    crc = zlib.crc32(content.encode('utf-8')) & 0xFFFFFF  # 24-bit
+    return base62_encode(crc).rjust(4, '0')  # pad to 4 chars
 ```
 
-**Pros:** Fast, widely available, good distribution
-**Cons:** Not cryptographic (doesn't matter here)
+**Why 24-bit, not 16-bit:** CRC16 gives 65k values (2-3 char base62, variable width). 24-bit gives 16.7M values → always exactly 4 chars in base62. Fixed-width is cleaner for parsing and eliminates the variable-length inconsistency noted in review.
 
-### Option B: FNV-1a
-
-```python
-def hash_line(content: str) -> str:
-    hash_val = 0x811c9dc5  # FNV offset basis
-    for byte in content.encode('utf-8'):
-        hash_val ^= byte
-        hash_val = (hash_val * 0x01000193) & 0xFFFFFFFF
-    return base62_encode(hash_val & 0xFFFF)  # 16-bit
-```
-
-**Pros:** Simple, no dependencies
-**Cons:** Slightly more code than CRC
-
-### Recommendation: CRC16 via zlib
-
-Python's `zlib` is stdlib, CRC is fast, and 16-bit gives 65k namespace (overkill for typical files).
+**Why not FNV-1a:** Same output quality for this use case, but CRC via `zlib` is stdlib with zero extra code.
 
 ### Base62 Encoding
 
@@ -534,8 +548,9 @@ def base62_encode(n: int) -> str:
 **Namespace:**
 - 2 chars: 62^2 = 3,844 values
 - 3 chars: 62^3 = 238,328 values
+- 4 chars: 62^4 = 14,776,336 values
 
-Use 3 chars for safety (most files <1000 lines, so collision risk ~0.4%).
+Use 4 chars fixed-width from 24 bits (16.7M). Birthday problem collision probability <0.003% at 1000 lines. Pad with leading `0` to ensure fixed width.
 
 ## Next Steps
 
@@ -552,3 +567,8 @@ Use 3 chars for safety (most files <1000 lines, so collision risk ~0.4%).
 - If hashline fails to improve metrics after 2 weeks of dogfooding, we learned something and can abandon cleanly
 - The benchmarking effort is optional — we can ship without it and rely on production metrics
 - Staleness detection is a bonus side effect, not the primary goal (edit reliability is)
+- Coder timeout is 90s per round (180s referenced earlier in "Current Edit Mechanism" refers to total task time budget, not per-round)
+
+## Future Considerations
+
+- **Dry-run / preview mode:** Add a `dry_run: true` flag to `sandbox_edit_file` that validates all refs and overlap rules without applying changes. Lets the agent check if a planned edit batch would succeed before committing. Low priority — build if retry loops remain high after initial rollout.
