@@ -53,6 +53,7 @@ interface RepoChatDrawerProps {
   branchesLoading?: boolean;
   branchesError?: string | null;
   onRefreshBranches?: () => void;
+  onDeleteBranch?: (branch: string) => Promise<boolean>;
 }
 
 const EMPTY_CHATS: Conversation[] = [];
@@ -91,6 +92,7 @@ export function RepoChatDrawer({
   branchesLoading = false,
   branchesError = null,
   onRefreshBranches,
+  onDeleteBranch,
 }: RepoChatDrawerProps) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<'history' | 'settings'>('history');
@@ -99,6 +101,8 @@ export function RepoChatDrawer({
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [deletingBranch, setDeletingBranch] = useState<string | null>(null);
 
   const drawerBranchOptions = useMemo(() => {
     if (!currentBranch) return availableBranches;
@@ -200,6 +204,23 @@ export function RepoChatDrawer({
       setSearchQuery('');
       cancelRename();
       setBranchMenuOpen(false);
+      setPendingDeleteBranch(null);
+      setDeletingBranch(null);
+    }
+  };
+
+  const requestDeleteBranch = async (branchName: string) => {
+    if (!onDeleteBranch || deletingBranch) return;
+    if (pendingDeleteBranch !== branchName) {
+      setPendingDeleteBranch(branchName);
+      return;
+    }
+    setDeletingBranch(branchName);
+    try {
+      const deleted = await onDeleteBranch(branchName);
+      setPendingDeleteBranch(deleted ? null : branchName);
+    } finally {
+      setDeletingBranch((prev) => (prev === branchName ? null : prev));
     }
   };
 
@@ -423,6 +444,10 @@ export function RepoChatDrawer({
                               open={branchMenuOpen}
                               onOpenChange={(open) => {
                                 setBranchMenuOpen(open);
+                                if (!open) {
+                                  setPendingDeleteBranch(null);
+                                  setDeletingBranch(null);
+                                }
                                 if (open && onRefreshBranches && !branchesLoading && drawerBranchOptions.length === 0) {
                                   onRefreshBranches();
                                 }
@@ -477,33 +502,61 @@ export function RepoChatDrawer({
 
                                 {!branchesLoading && !branchesError && drawerBranchOptions.map((branch) => {
                                   const isActiveBranch = branch.name === currentBranch;
+                                  const canDeleteBranch = Boolean(onDeleteBranch) && !isActiveBranch && !branch.isDefault && !branch.isProtected;
+                                  const isDeletePending = pendingDeleteBranch === branch.name;
+                                  const isDeletingThisBranch = deletingBranch === branch.name;
                                   return (
-                                    <DropdownMenuItem
-                                      key={branch.name}
-                                      onSelect={() => {
-                                        if (branch.name !== currentBranch) {
+                                    <div key={branch.name}>
+                                      <DropdownMenuItem
+                                        onSelect={(e) => {
+                                          if (isActiveBranch) {
+                                            e.preventDefault();
+                                            return;
+                                          }
+                                          setPendingDeleteBranch(null);
                                           setCurrentBranch(branch.name);
-                                        }
-                                      }}
-                                      className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
-                                        isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
-                                      }`}
-                                    >
-                                      <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
-                                        {branch.name}
-                                      </span>
-                                      {branch.isDefault && (
-                                        <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
-                                          default
+                                        }}
+                                        className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
+                                          isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
+                                        }`}
+                                      >
+                                        <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
+                                          {branch.name}
                                         </span>
+                                        {branch.isDefault && (
+                                          <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
+                                            default
+                                          </span>
+                                        )}
+                                        {branch.isProtected && (
+                                          <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
+                                            protected
+                                          </span>
+                                        )}
+                                        {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
+                                      </DropdownMenuItem>
+                                      {canDeleteBranch && (
+                                        <DropdownMenuItem
+                                          onSelect={(e) => {
+                                            e.preventDefault();
+                                            if (isDeletingThisBranch || deletingBranch) return;
+                                            void requestDeleteBranch(branch.name);
+                                          }}
+                                          className={`mx-1 mb-1 flex items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] ${
+                                            isDeletePending
+                                              ? 'bg-red-950/30 text-red-300 hover:bg-red-950/40'
+                                              : 'text-push-fg-dim hover:bg-[#0d1119] hover:text-red-300'
+                                          }`}
+                                        >
+                                          {isDeletingThisBranch ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                                          {isDeletingThisBranch
+                                            ? `Deleting ${branch.name}...`
+                                            : isDeletePending
+                                            ? `Confirm delete ${branch.name}`
+                                            : `Delete ${branch.name}`}
+                                        </DropdownMenuItem>
                                       )}
-                                      {branch.isProtected && (
-                                        <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
-                                          protected
-                                        </span>
-                                      )}
-                                      {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
-                                    </DropdownMenuItem>
+                                    </div>
                                   );
                                 })}
                               </DropdownMenuContent>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, ChevronDown, Check } from 'lucide-react';
+import { FolderOpen, Loader2, Download, Save, RotateCcw, GitBranch, GitMerge, ChevronDown, Check, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useChat } from '@/hooks/useChat';
@@ -21,7 +21,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useProtectMain } from '@/hooks/useProtectMain';
 import { buildWorkspaceContext, sanitizeProjectInstructions } from '@/lib/workspace-context';
 import { readFromSandbox, execInSandbox, downloadFromSandbox, writeToSandbox } from '@/lib/sandbox-client';
-import { fetchProjectInstructions, fetchRepoBranches } from '@/lib/github-tools';
+import { fetchProjectInstructions, fetchRepoBranches, executeDeleteBranch } from '@/lib/github-tools';
 import { getSandboxStartMode, setSandboxStartMode, type SandboxStartMode } from '@/lib/sandbox-start-mode';
 import {
   createSnapshot,
@@ -257,6 +257,8 @@ function App() {
   const [repoBranchesLoading, setRepoBranchesLoading] = useState(false);
   const [repoBranchesError, setRepoBranchesError] = useState<string | null>(null);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [deletingBranch, setDeletingBranch] = useState<string | null>(null);
   const branchFetchSeqRef = useRef(0);
 
   // Derived branch values
@@ -354,10 +356,53 @@ function App() {
       setRepoBranchesError(null);
       setRepoBranchesLoading(false);
       setBranchMenuOpen(false);
+      setPendingDeleteBranch(null);
+      setDeletingBranch(null);
       return;
     }
+    setPendingDeleteBranch(null);
+    setDeletingBranch(null);
     void loadRepoBranches(activeRepoFullName);
   }, [activeRepoFullName, isSandboxMode, loadRepoBranches]);
+
+  const handleDeleteBranch = useCallback(async (branchName: string): Promise<boolean> => {
+    if (!activeRepo || isSandboxMode) return false;
+    const normalized = branchName.trim();
+    if (!normalized) return false;
+
+    const branchMeta = displayBranches.find((b) => b.name === normalized);
+    const isDefaultBranch = normalized === activeRepo.default_branch || Boolean(branchMeta?.isDefault);
+    const isProtectedBranch = Boolean(branchMeta?.isProtected);
+    const isCurrentBranch = normalized === currentBranch;
+
+    if (isCurrentBranch) {
+      toast.error(`Cannot delete current branch "${normalized}"`);
+      return false;
+    }
+    if (isDefaultBranch) {
+      toast.error(`Cannot delete default branch "${normalized}"`);
+      return false;
+    }
+    if (isProtectedBranch) {
+      toast.error(`Cannot delete protected branch "${normalized}"`);
+      return false;
+    }
+
+    setDeletingBranch(normalized);
+    try {
+      await executeDeleteBranch(activeRepo.full_name, normalized);
+      toast.success(`Deleted branch "${normalized}"`);
+      setPendingDeleteBranch(null);
+      await loadRepoBranches(activeRepo.full_name);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message.replace(/^\[Tool Error\]\s*/, '') : 'Failed to delete branch';
+      toast.error(message);
+      return false;
+    } finally {
+      setDeletingBranch((prev) => (prev === normalized ? null : prev));
+    }
+  }, [activeRepo, currentBranch, displayBranches, isSandboxMode, loadRepoBranches]);
 
   useEffect(() => {
     if (hasOllamaKey && ollamaModels.length === 0 && !ollamaModelsLoading) {
@@ -1188,6 +1233,7 @@ function App() {
                     }
                   : undefined
               }
+              onDeleteBranch={handleDeleteBranch}
             />
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold text-[#f5f7ff]">
@@ -1262,6 +1308,9 @@ function App() {
               open={branchMenuOpen}
               onOpenChange={(open) => {
                 setBranchMenuOpen(open);
+                if (!open) {
+                  setPendingDeleteBranch(null);
+                }
                 if (open && !repoBranchesLoading && displayBranches.length === 0) {
                   void loadRepoBranches(activeRepo.full_name);
                 }
@@ -1334,31 +1383,65 @@ function App() {
 
                 {!repoBranchesLoading && !repoBranchesError && displayBranches.map((branch) => {
                   const isActiveBranch = branch.name === currentBranch;
+                  const canDeleteBranch = !isActiveBranch && !branch.isDefault && !branch.isProtected;
+                  const isDeletePending = pendingDeleteBranch === branch.name;
+                  const isDeletingThisBranch = deletingBranch === branch.name;
                   return (
-                    <DropdownMenuItem
-                      key={branch.name}
-                      onSelect={() => {
-                        if (!isActiveBranch) setCurrentBranch(branch.name);
-                      }}
-                      className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
-                        isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
-                      }`}
-                    >
-                      <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
-                        {branch.name}
-                      </span>
-                      {branch.isDefault && (
-                        <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
-                          default
+                    <div key={branch.name}>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          if (isActiveBranch) {
+                            e.preventDefault();
+                            return;
+                          }
+                          setPendingDeleteBranch(null);
+                          setCurrentBranch(branch.name);
+                        }}
+                        className={`mx-1 flex items-center gap-2 rounded-lg px-3 py-2 ${
+                          isActiveBranch ? 'bg-[#101621]' : 'hover:bg-[#0d1119]'
+                        }`}
+                      >
+                        <span className={`min-w-0 flex-1 truncate text-xs ${isActiveBranch ? 'text-push-fg' : 'text-push-fg-secondary'}`}>
+                          {branch.name}
                         </span>
+                        {branch.isDefault && (
+                          <span className="rounded-full bg-[#0d2847] px-1.5 py-0.5 text-[10px] text-[#58a6ff]">
+                            default
+                          </span>
+                        )}
+                        {branch.isProtected && (
+                          <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
+                            protected
+                          </span>
+                        )}
+                        {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
+                      </DropdownMenuItem>
+                      {canDeleteBranch && (
+                        <DropdownMenuItem
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            if (isDeletingThisBranch || deletingBranch) return;
+                            if (!isDeletePending) {
+                              setPendingDeleteBranch(branch.name);
+                              return;
+                            }
+                            void handleDeleteBranch(branch.name);
+                          }}
+                          className={`mx-1 mb-1 flex items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] ${
+                            isDeletePending
+                              ? 'bg-red-950/30 text-red-300 hover:bg-red-950/40'
+                              : 'text-push-fg-dim hover:bg-[#0d1119] hover:text-red-300'
+                          }`}
+                        >
+                          {isDeletingThisBranch ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                          {isDeletingThisBranch
+                            ? `Deleting ${branch.name}...`
+                            : isDeletePending
+                            ? `Confirm delete ${branch.name}`
+                            : `Delete ${branch.name}`}
+                        </DropdownMenuItem>
                       )}
-                      {branch.isProtected && (
-                        <span className="rounded-full bg-[#2a1a1a] px-1.5 py-0.5 text-[10px] text-[#fca5a5]">
-                          protected
-                        </span>
-                      )}
-                      {isActiveBranch && <Check className="h-3.5 w-3.5 text-push-link" />}
-                    </DropdownMenuItem>
+                    </div>
                   );
                 })}
               </DropdownMenuContent>
