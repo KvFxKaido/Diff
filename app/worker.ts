@@ -914,10 +914,15 @@ async function handleZaiChat(request: Request, env: Env): Promise<Response> {
     return Response.json({ error: 'Rate limit exceeded' }, { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfter) } });
   }
 
-  if (!env.ZAI_API_KEY) {
+  // Prefer server-side secret; fall back to client-provided Authorization header
+  const serverKey = env.ZAI_API_KEY;
+  const clientAuth = request.headers.get('Authorization');
+  const authHeader = serverKey ? `Bearer ${serverKey}` : clientAuth;
+
+  if (!authHeader) {
     return Response.json(
       { error: 'Z.ai API key not configured. Add it in Settings or set ZAI_API_KEY on the Worker.' },
-      { status: 500 },
+      { status: 401 },
     );
   }
 
@@ -938,7 +943,7 @@ async function handleZaiChat(request: Request, env: Env): Promise<Response> {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.ZAI_API_KEY}`,
+          'Authorization': authHeader,
         },
         body: bodyResult.text,
         signal: controller.signal,
