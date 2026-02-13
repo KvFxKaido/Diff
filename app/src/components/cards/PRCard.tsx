@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { ChevronRight, GitPullRequest, GitMerge } from 'lucide-react';
+import { GitPullRequest, GitMerge } from 'lucide-react';
 import type { PRCardData } from '@/types';
+import { useExpandable } from '@/hooks/useExpandable';
 import { CARD_SHELL_CLASS } from '@/lib/utils';
+import { ExpandChevron, ExpandableCardPanel } from './expandable';
 
 const statusConfig = {
   open: { label: 'Open', color: 'bg-[#22c55e]/15 text-[#22c55e]', Icon: GitPullRequest },
@@ -10,7 +11,7 @@ const statusConfig = {
 };
 
 export function PRCard({ data }: { data: PRCardData }) {
-  const [filesExpanded, setFilesExpanded] = useState(false);
+  const { expanded: filesExpanded, toggleExpanded: toggleFilesExpanded } = useExpandable(false);
   const { label, color, Icon } = statusConfig[data.state];
 
   return (
@@ -62,27 +63,27 @@ export function PRCard({ data }: { data: PRCardData }) {
       {data.files && data.files.length > 0 && (
         <div className="border-t border-push-edge">
           <button
-            onClick={() => setFilesExpanded((e) => !e)}
+            onClick={toggleFilesExpanded}
             className="w-full px-3 py-1.5 flex items-center gap-1 text-[12px] text-push-fg-dim hover:text-push-fg-secondary transition-colors"
           >
-            <ChevronRight
-              className={`h-3 w-3 transition-transform duration-200 ${filesExpanded ? 'rotate-90' : ''}`}
-            />
+            <ExpandChevron expanded={filesExpanded} />
             <span>{data.files.length} file{data.files.length !== 1 ? 's' : ''} changed</span>
           </button>
-          {filesExpanded && (
-            <div className="px-3 pb-2 space-y-0.5 expand-in">
-              {data.files.map((f, i) => (
-                <div key={i} className="flex items-center gap-2 text-[12px]">
-                  <span className="text-push-fg-dim font-mono w-12 text-right shrink-0">
-                    <span className="text-[#22c55e]">+{f.additions}</span>{' '}
-                    <span className="text-[#ef4444]">-{f.deletions}</span>
-                  </span>
-                  <span className="text-push-fg-secondary font-mono truncate">{f.filename}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <ExpandableCardPanel
+            expanded={filesExpanded}
+            bordered={false}
+            className="px-3 pb-2 space-y-0.5"
+          >
+            {data.files.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 text-[12px]">
+                <span className="text-push-fg-dim font-mono w-12 text-right shrink-0">
+                  <span className="text-[#22c55e]">+{f.additions}</span>{' '}
+                  <span className="text-[#ef4444]">-{f.deletions}</span>
+                </span>
+                <span className="text-push-fg-secondary font-mono truncate">{f.filename}</span>
+              </div>
+            ))}
+          </ExpandableCardPanel>
         </div>
       )}
     </div>
