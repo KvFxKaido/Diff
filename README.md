@@ -5,34 +5,38 @@
 
 **Built for reviewing, deciding, and shipping — not typing thousands of lines on glass.**
 
-Push is a mobile-native AI coding agent with direct GitHub repo access. Chat with your codebase, review PRs, and orchestrate changes from anywhere. It is designed for **momentum and decision-making on the go**, giving you a manager's interface to your code when you're away from your desk.
+Push is a mobile-native AI coding agent with direct GitHub repo access. It is built as an **execution control plane** for builders who already have an AI stack and want to keep shipping when away from their desk.
 
 ## What It Does
 
-Push is a personal chat interface backed by role-based AI agents. Select a repo, ask questions, and the agent reads your code, analyzes PRs, runs sandbox operations, and shows results as inline cards — all in a streaming conversation.
+Push is a personal chat interface backed by role-based AI agents. Select a repo, ask questions, and orchestrate real code work from your phone.
 
-- **Chat-first** — conversation is the primary interface, not forms or dashboards
-- **Repo-locked context** — select a repo and the agent only sees that repo
-- **Tool protocol** — the agent calls GitHub and sandbox tools mid-conversation (PRs, commits, diffs, tests, type checks, workflows)
-- **Web search** — the agent can search the web mid-conversation via Tavily, Ollama native search, or DuckDuckGo fallback
-- **Browser tools (optional)** — capture screenshots and extract page text from sandboxed browser sessions
-- **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
-- **User identity** — tell the agent your name, bio, and GitHub login so it knows who it's working with
-- **Streaming** — responses arrive token-by-token with visible thinking
-- **Branch & merge** — create branches, commit freely, merge via GitHub PR with Auditor review — from chat context and the workspace hub
-- **Protect Main** — optional setting blocks direct commits to `main`, requiring a branch for all work
-- **Sandbox Mode** — Start coding immediately without GitHub auth. Ephemeral workspace that auto-expires after 30 minutes. Download your work before it disappears.
+- **Review and decide fast** — PRs, diffs, checks, and repo state in structured cards
+- **Delegate implementation** — Orchestrator can hand coding work to Coder in a live sandbox
+- **Gate risky changes** — Auditor enforces a SAFE/UNSAFE pre-commit verdict
+- **Stay repo-locked** — active chat context is bound to one repo and one active branch
+- **Use your existing AI stack** — pick Kimi, Mistral, Ollama Cloud, Z.ai, or MiniMax
+- **Merge from mobile** — branch, commit, push, and merge through GitHub PR flow
+- **Fallback to sandbox-only mode** — start without GitHub auth and export your workspace anytime
+
+## Why Push Is Different
+
+- **Role-separated agents** — Orchestrator, Coder, and Auditor have distinct responsibilities
+- **Branch-scoped memory** — chats are permanently tied to the branch where they were created
+- **Provider-agnostic backend** — backend choice is runtime-selectable and locked per chat for consistency
 
 ## Who It's For
 
-Push is for developers who:
+Push is for builders in motion:
 
-- **Hate burning API credits** — Use services with predictable monthly costs, not per-token surprises
-- **Already subscribe to AI services** — Use your existing Kimi, Mistral, Ollama Cloud, Z.ai, or MiniMax subscription
-- **Want mobile-native workflows** — Designed for momentum and decision-making on the go, not replacing your IDE
-- **Like owning their tools** — Open source and architecturally self-hostable. While it uses Cloudflare and Modal by default, the codebase is designed for full control and can be self-hosted for maximum privacy.
+- **Solo founders** who need to review and ship while away from desktop
+- **Indie hackers** who already pay for AI providers and want better execution leverage
+- **Lead developers / CTOs** who want mobile oversight and approvals without losing technical depth
+- **Developers who want control** — open-source codebase with self-hosting path and provider choice
 
-The app is free. The AI requires a subscription — but you pick which one, and you know exactly what it costs.
+Push is not trying to replace desktop IDE flow for deep coding sessions. It is optimized for momentum, decisions, and execution control from mobile.
+
+The app is free. AI usage depends on your provider subscription, and you choose which provider to run.
 
 ## Tech Stack
 
