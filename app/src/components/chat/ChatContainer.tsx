@@ -13,6 +13,10 @@ interface ChatContainerProps {
   onCardAction?: (action: CardAction) => void;
 }
 
+const AUTO_SCROLL_THRESHOLD_PX = 150;
+const AT_BOTTOM_THRESHOLD_PX = 48;
+const SCROLL_IDLE_MS = 180;
+
 function EmptyState({
   activeRepo,
   isSandboxMode,
