@@ -109,6 +109,8 @@ export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode
   const [showScrollButton, setShowScrollButton] = useState(false);
   const lastMessageRef = useRef<ChatMessage | null>(null);
   const lastMessageContent = messages.length > 0 ? messages[messages.length - 1]?.content : '';
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track scroll position and show/hide scroll button
   useEffect(() => {
@@ -116,14 +118,36 @@ export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode
     if (!container) return;
 
     const handleScroll = () => {
-      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      setShowScrollButton(distanceFromBottom > 300);
+      // Hide button while actively scrolling
+      setShowScrollButton(false);
+
+      // Clear any pending timeouts
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+
+      // Set timeout to show button after scrolling stops (1s inactivity)
+      scrollTimeoutRef.current = setTimeout(() => {
+        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+        
+        // Threshold of 150px for visibility
+        if (distanceFromBottom > 150) {
+          setShowScrollButton(true);
+
+          // Show it briefly (hides after 3s of continued inactivity)
+          hideTimeoutRef.current = setTimeout(() => {
+            setShowScrollButton(false);
+          }, 3000);
+        }
+      }, 1000);
     };
 
     container.addEventListener('scroll', handleScroll);
-    handleScroll();
 
-    return () => container.removeEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
   }, []);
 
   // Auto-scroll to bottom when new messages arrive or content streams in
@@ -157,6 +181,7 @@ export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode
 
   const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowScrollButton(false);
   };
 
   if (messages.length === 0) {
@@ -187,7 +212,7 @@ export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode
       <button
         onClick={scrollToBottom}
         className={`
-          fixed right-4 bottom-24
+          absolute left-1/2 -translate-x-1/2 bottom-12
           flex items-center justify-center
           w-10 h-10
           rounded-full
@@ -195,7 +220,7 @@ export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode
           bg-push-grad-card
           text-push-fg-secondary
           shadow-push-lg backdrop-blur-sm
-          transition-all duration-300 cubic-bezier(0.16, 1, 0.3, 1)
+          transition-all duration-300 ease-out
           hover:border-[#31425a] hover:text-[#f0f4ff] hover:shadow-push-xl
           spring-press
           ${showScrollButton ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-3 pointer-events-none'}
