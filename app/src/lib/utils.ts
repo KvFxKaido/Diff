@@ -233,7 +233,11 @@ export function extractBareToolJsonObjects(text: string): unknown[] {
         results.push(parsed);
       }
     } catch {
-      // Not valid JSON — skip
+      // Not valid JSON — try repair
+      const repaired = repairToolJson(candidate);
+      if (repaired) {
+        results.push(repaired);
+      }
     }
 
     i = end + 1;
@@ -263,7 +267,12 @@ export function detectToolFromText<T>(
       const result = validate(parsed);
       if (result) return result;
     } catch {
-      // Not valid JSON
+      // Not valid JSON — try repair on fenced content
+      const repaired = repairToolJson(match[1].trim());
+      if (repaired) {
+        const result = validate(repaired);
+        if (result) return result;
+      }
     }
   }
 
