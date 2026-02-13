@@ -25,7 +25,7 @@ import { getModelForRole } from '@/lib/providers';
 import { streamWithTimeout } from '@/lib/utils';
 import { HubScratchpadTab, HubConsoleTab, HubFilesTab, HubDiffTab } from './hub-tabs';
 import type { ScratchpadMemory } from '@/hooks/useScratchpad';
-import type { ChatMessage, DiffPreviewCardData } from '@/types';
+import type { AgentStatusEvent, ChatMessage, DiffPreviewCardData } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +51,7 @@ interface WorkspaceHubSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   messages: ChatMessage[];
+  agentEvents: AgentStatusEvent[];
   sandboxId: string | null;
   sandboxStatus: 'idle' | 'creating' | 'ready' | 'error';
   ensureSandbox: () => Promise<string | null>;
@@ -170,6 +171,7 @@ export function WorkspaceHubSheet({
   open,
   onOpenChange,
   messages,
+  agentEvents,
   sandboxId,
   sandboxStatus,
   ensureSandbox,
@@ -767,7 +769,7 @@ export function WorkspaceHubSheet({
             )}
 
             {activeTab === 'console' && (
-              <HubConsoleTab messages={messages} />
+              <HubConsoleTab messages={messages} agentEvents={agentEvents} />
             )}
 
             {activeTab === 'files' && (

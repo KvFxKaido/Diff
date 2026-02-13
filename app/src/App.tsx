@@ -132,6 +132,7 @@ function App() {
     messages,
     sendMessage,
     agentStatus,
+    agentEvents,
     isStreaming,
     lockedProvider,
     isProviderLocked,
@@ -1743,6 +1744,7 @@ function App() {
         open={isWorkspaceHubOpen}
         onOpenChange={setIsWorkspaceHubOpen}
         messages={messages}
+        agentEvents={agentEvents}
         sandboxId={sandbox.sandboxId}
         sandboxStatus={sandbox.status}
         ensureSandbox={ensureSandbox}
