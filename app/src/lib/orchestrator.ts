@@ -532,7 +532,7 @@ function toLLMMessages(
   hasSandbox?: boolean,
   systemPromptOverride?: string,
   scratchpadContent?: string,
-  providerType?: 'moonshot' | 'ollama' | 'mistral' | 'zai',
+  providerType?: 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'minimax',
   providerModel?: string,
 ): LLMMessage[] {
   // Build system prompt: base + user identity + workspace context + tool protocol + optional sandbox tools + scratchpad
@@ -799,7 +799,7 @@ interface StreamProviderConfig {
   checkFinishReason: (choice: unknown) => boolean;
   shouldResetStallOnReasoning?: boolean;
   /** Provider identity — used to conditionally inject provider-specific tool protocols */
-  providerType?: 'moonshot' | 'ollama' | 'mistral' | 'zai';
+  providerType?: 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'minimax';
   /** Override the fetch URL (e.g., Mistral Agents API uses a different endpoint) */
   apiUrlOverride?: string;
   /** Transform the request body before sending (e.g., swap model for agent_id) */
