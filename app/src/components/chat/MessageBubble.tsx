@@ -8,15 +8,114 @@ interface MessageBubbleProps {
   onCardAction?: (action: CardAction) => void;
 }
 
+function isToolCallObject(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.tool === 'string';
+}
+
 function isToolCallJson(code: string): boolean {
   try {
     const trimmed = code.trim();
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return false;
     const parsed = JSON.parse(trimmed);
-    return parsed && typeof parsed === 'object' && 'tool' in parsed;
+    return isToolCallObject(parsed);
   } catch {
     return false;
   }
+}
+
+function stripBareToolCallJson(text: string): string {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let i = 0;
+
+  while (i < text.length) {
+    const braceIdx = text.indexOf('{', i);
+    if (braceIdx === -1) break;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+
+    for (let j = braceIdx; j < text.length; j++) {
+      const ch = text[j];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (ch === '{') depth++;
+      if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+
+    if (end === -1) {
+      i = braceIdx + 1;
+      continue;
+    }
+
+    const candidate = text.slice(braceIdx, end + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      if (isToolCallObject(parsed)) {
+        ranges.push({ start: braceIdx, end: end + 1 });
+      }
+    } catch {
+      // Not valid JSON, keep scanning.
+    }
+
+    i = end + 1;
+  }
+
+  if (ranges.length === 0) return text;
+
+  let output = '';
+  let cursor = 0;
+  for (const range of ranges) {
+    output += text.slice(cursor, range.start);
+    const prev = output[output.length - 1];
+    const next = text[range.end];
+    if (prev && next && !/\s/.test(prev) && !/\s/.test(next)) {
+      output += ' ';
+    }
+    cursor = range.end;
+  }
+  output += text.slice(cursor);
+  return output;
+}
+
+function stripToolCallPayload(content: string): string {
+  if (!content) return '';
+
+  const withoutToolFences = content.replace(
+    /```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/g,
+    (full, block) => {
+      try {
+        const parsed = JSON.parse(String(block).trim());
+        return isToolCallObject(parsed) ? '' : full;
+      } catch {
+        return full;
+      }
+    },
+  );
+
+  return stripBareToolCallJson(withoutToolFences)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function formatContent(content: string): React.ReactNode[] {
