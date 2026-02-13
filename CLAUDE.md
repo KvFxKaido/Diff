@@ -39,7 +39,9 @@ Role-based agent system. Models are replaceable. Roles are locked. The user neve
 
 **Tool protocol:** Tools are prompt-engineered — the system prompt defines available tools and JSON format. The orchestrator detects JSON tool blocks in responses, executes them against GitHub's API, injects results as synthetic messages, and re-calls the LLM. Both the Orchestrator and Coder tool loops are unbounded — they continue until the model stops emitting tool calls (or the user aborts). Sandbox tools use the same JSON block pattern, detected by a unified tool dispatch layer.
 
-**Browser tools (optional):** `sandbox_browser_screenshot` and `sandbox_browser_extract`, prompt-gated by `VITE_BROWSER_TOOL_ENABLED=true`, routed through Worker endpoints. The Worker injects Browserbase credentials server-side.
+**Browser tools (optional):** `sandbox_browser_screenshot` and `sandbox_browser_extract`, prompt-gated by `VITE_BROWSER_TOOL_ENABLED=true`, routed through Worker endpoints. Browser session credentials are injected server-side by the Worker.
+
+**Harness focus (current):** Reliability improvements are prioritized over model churn. Active tracks are defined in `documents/Harness Reliability Plan.md` (edit reliability experiments, read efficiency, tool-loop robustness, background execution design, and operator visibility).
 
 **Web search tools:** The Orchestrator can search the web mid-conversation via `web-search-tools.ts`. Three backends: **Tavily** (premium, LLM-optimized results via `VITE_TAVILY_API_KEY`), **Ollama native search** (POST `/api/web_search`), and **DuckDuckGo** (free fallback). Mistral handles search natively via its Agents API. API keys are configurable at runtime via Settings.
 

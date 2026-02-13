@@ -15,7 +15,7 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 - **Repo-locked context** — select a repo and the agent only sees that repo
 - **Tool protocol** — the agent calls GitHub and sandbox tools mid-conversation (PRs, commits, diffs, tests, type checks, workflows)
 - **Web search** — the agent can search the web mid-conversation via Tavily, Ollama native search, or DuckDuckGo fallback
-- **Browser tools (optional)** — capture screenshots and extract page text via Browserbase in the sandbox
+- **Browser tools (optional)** — capture screenshots and extract page text from sandboxed browser sessions
 - **Scratchpad** — shared notepad for accumulating ideas, requirements, and decisions throughout a session
 - **User identity** — tell the agent your name, bio, and GitHub login so it knows who it's working with
 - **Streaming** — responses arrive token-by-token with visible thinking
@@ -111,7 +111,7 @@ Use it for quick experiments, learning the interface, or when you're on a device
 
 Deployed on Cloudflare Workers. The worker at `app/worker.ts` proxies `/api/kimi/chat` to Kimi For Coding, `/api/ollama/chat` to Ollama Cloud, `/api/mistral/chat` to Mistral Vibe, `/api/zai/chat` to Z.ai, `/api/minimax/chat` to MiniMax, and `/api/sandbox/*` to Modal web endpoints, with API keys stored as runtime secrets. Static assets are served by the Cloudflare Assets layer. The Modal sandbox backend at `sandbox/app.py` is deployed separately via `modal deploy`.
 
-For browser tools, set Worker secrets `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`. The Worker injects these server-side for `/api/sandbox/browser-screenshot` and `/api/sandbox/browser-extract` so browser credentials never reach the client.
+For browser tools, set Worker secrets `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`. The Worker injects them server-side for `/api/sandbox/browser-screenshot` and `/api/sandbox/browser-extract` so browser credentials never reach the client.
 
 ```bash
 cd app && npm run build
@@ -130,18 +130,15 @@ Five AI backends are supported: **Kimi For Coding**, **Mistral Vibe**, **Ollama 
 
 There is always exactly one **Active Branch** per repo session — it is the commit target, push target, diff base, and chat context. Switching branches tears down the sandbox and creates a fresh one (clean state). Workspace actions for files, diff, console, scratchpad, and commit/push are unified in the **Workspace Hub**. All merges go through **GitHub Pull Requests** — Push never runs `git merge` locally. The merge flow: check working tree → find/create PR → Auditor review → check eligibility → merge via GitHub API (merge commit strategy). Chats are permanently **branch-scoped** and grouped by branch in the history drawer.
 
-## Browserbase Status
+## Harness Focus
 
-Current state from `documents/Browserbase Integration Spike.md`:
+Current harness priorities from `documents/Harness Reliability Plan.md`:
 
-- [x] v1 complete and validated on deployed Worker + Modal
-- [x] `sandbox_browser_screenshot` shipped (card UI + metadata)
-- [x] `sandbox_browser_extract` shipped (card UI + bounded text extraction)
-- [x] Browserbase credentials injected server-side via Worker secrets
-- [x] Guardrails shipped (URL allowlist, private-network block, output caps)
-- [x] Test suite shipped (97 tests across tool/client/routes/types)
-- [ ] Validate on real mobile cellular networks (iOS Safari + Android Chrome)
-- [ ] Progressively enable `VITE_BROWSER_TOOL_ENABLED` after latency/error checks
+- [x] stale-write protection + write-path telemetry baseline
+- [x] improved operator visibility (Coder status events in console, cleaner dialogue/tool display)
+- [ ] hashline edit reliability gate (provider compliance micro-test before build)
+- [ ] read-path efficiency for edit flows (line-range reads + annotation discipline)
+- [ ] server-side background run model for mobile lock/background resilience
 
 ## Project Structure
 

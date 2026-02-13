@@ -34,7 +34,8 @@ Push is a personal chat interface backed by role-based AI agents (Orchestrator, 
 *   **Sandbox:** Persistent Linux environment (via Modal) for cloning repos, running tests, and editing files.
 *   **Sandbox Mode:** Ephemeral workspace (no GitHub repo). Entry via onboarding or repo picker. GitHub tools blocked; 30-min lifetime with expiry warning. Download as tar.gz.
 *   **Web Search Tools:** Mid-conversation web search via Tavily (premium), Ollama native search, or DuckDuckGo fallback. Mistral handles search natively via Agents API.
-*   **Browser Tools (Optional):** Sandbox-backed webpage screenshot + text extraction via Browserbase.
+*   **Browser Tools (Optional):** Sandbox-backed webpage screenshot + text extraction (server-side browser credentials injected by Worker).
+*   **Harness Focus:** Active reliability tracks (including hashline experiments, read efficiency, tool-loop robustness, and background execution design) are tracked in `documents/Harness Reliability Plan.md`.
 *   **User Identity:** Display name, bio, and GitHub login set in Settings. Stored in localStorage via `useUserProfile` hook. Injected into Orchestrator and Coder system prompts via `buildUserIdentityBlock()`.
 *   **Scratchpad:** Shared persistent notepad for user/AI collaboration.
 *   **Active Branch Model:** There is always exactly one Active Branch per repo session — commit target, push target, diff base, and chat context. Switching branches tears down the sandbox and creates a fresh one (clean state). Branch switching is available in history drawer, home page, and workspace selector. Branch creation via workspace/header action on main; feature branches show "Merge into main". Non-default inactive branches can be deleted in the workspace selector.

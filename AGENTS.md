@@ -54,6 +54,15 @@ Tools are prompt-engineered — the system prompt defines available tools and JS
 
 The Orchestrator can delegate complex coding tasks to the Coder sub-agent via `delegate_coder`. The Coder runs autonomously with its own tool loop in the sandbox, then returns results to the Orchestrator.
 
+### Harness Focus
+
+Current harness priorities are tracked in `documents/Harness Reliability Plan.md`:
+- edit reliability experiments (hashline-gated)
+- read/context efficiency for edit flows
+- tool-loop robustness
+- background execution design for mobile lock/background
+- operator visibility and failure diagnostics
+
 ### Browser Tools (Optional)
 
 - `sandbox_browser_screenshot` — capture a webpage screenshot and render a preview card
