@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { ChevronRight, FileDiff } from 'lucide-react';
+import { FileDiff } from 'lucide-react';
 import type { DiffPreviewCardData } from '@/types';
+import { useExpandable } from '@/hooks/useExpandable';
 import { CARD_SHELL_CLASS } from '@/lib/utils';
+import { ExpandChevron, ExpandableCardPanel } from './expandable';
 
 export function DiffLine({ line, index }: { line: string; index: number }) {
   let className = 'font-mono text-[12px] leading-relaxed px-3 whitespace-pre-wrap break-all';
@@ -26,14 +27,14 @@ export function DiffLine({ line, index }: { line: string; index: number }) {
 }
 
 export function DiffPreviewCard({ data }: { data: DiffPreviewCardData }) {
-  const [expanded, setExpanded] = useState(false);
+  const { expanded, toggleExpanded } = useExpandable(false);
   const lines = data.diff.split('\n');
 
   return (
     <div className={CARD_SHELL_CLASS}>
       {/* Header */}
       <button
-        onClick={() => setExpanded((e) => !e)}
+        onClick={toggleExpanded}
         className="w-full px-3.5 py-3 flex items-center gap-2.5 hover:bg-[#0d1119] transition-colors duration-200"
       >
         <FileDiff className="h-4 w-4 shrink-0 text-push-fg-secondary" />
@@ -43,27 +44,26 @@ export function DiffPreviewCard({ data }: { data: DiffPreviewCardData }) {
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[12px] text-[#22c55e] font-mono">+{data.additions}</span>
           <span className="text-[12px] text-[#ef4444] font-mono">-{data.deletions}</span>
-          <ChevronRight
-            className={`h-3 w-3 text-push-fg-dim transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
-          />
+          <ExpandChevron expanded={expanded} />
         </div>
       </button>
 
       {/* Diff content */}
-      {expanded && (
-        <div className="border-t border-push-edge max-h-[400px] overflow-y-auto expand-in">
-          <div className="py-1">
-            {lines.map((line, i) => (
-              <DiffLine key={i} line={line} index={i} />
-            ))}
-          </div>
-          {data.truncated && (
-            <div className="px-3 py-1.5 text-[11px] text-push-fg-dim italic border-t border-push-edge">
-              Diff truncated
-            </div>
-          )}
+      <ExpandableCardPanel
+        expanded={expanded}
+        className="max-h-[400px] overflow-y-auto"
+      >
+        <div className="py-1">
+          {lines.map((line, i) => (
+            <DiffLine key={i} line={line} index={i} />
+          ))}
         </div>
-      )}
+        {data.truncated && (
+          <div className="px-3 py-1.5 text-[11px] text-push-fg-dim italic border-t border-push-edge">
+            Diff truncated
+          </div>
+        )}
+      </ExpandableCardPanel>
     </div>
   );
 }
