@@ -4,12 +4,10 @@ Use this file to quickly identify which planning docs are authoritative vs histo
 
 ## Active
 
-- `Browserbase Integration Spike.md`
-  - Status: Active reference for browser tool implementation and hardening tasks.
-- `Hashline Edit Tool Spike.md`
-  - Status: Exploratory proposal for more stable line-addressed file edits.
-- `Sandbox mode.md`
-  - Status: v1 implemented. Contains original spec + implementation notes.
+- `Harness Reliability Plan.md`
+  - Status: Active harness strategy and experiment roadmap (hashline included as one track).
+- `Background Coder Tasks Plan.md`
+  - Status: Draft plan for server-side background coding runs and reconnectable job timelines.
 - `SECURITY_AUDIT.md`
   - Status: Security findings and mitigation history.
 
@@ -27,6 +25,8 @@ Use this file to quickly identify which planning docs are authoritative vs histo
   - Status: Historical planning reference; branch model now codified in root docs and code.
 - `archive/Memvid Integration Proposal.md`
   - Status: Historical proposal; relevant shipped pieces are reflected elsewhere.
+- `Browserbase Integration Spike.md`
+  - Status: Historical implementation spike; browser tools are now part of baseline docs.
 
 ## Promotion Rule
 
