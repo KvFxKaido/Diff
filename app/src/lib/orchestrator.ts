@@ -7,9 +7,10 @@ import { getMoonshotKey } from '@/hooks/useMoonshotKey';
 import { getOllamaKey } from '@/hooks/useOllamaConfig';
 import { getMistralKey } from '@/hooks/useMistralConfig';
 import { getZaiKey } from '@/hooks/useZaiConfig';
+import { getMiniMaxKey } from '@/hooks/useMiniMaxConfig';
 import { getUserProfile } from '@/hooks/useUserProfile';
 import type { UserProfile } from '@/types';
-import { getOllamaModelName, getMistralModelName, getPreferredProvider, getZaiModelName } from './providers';
+import { getOllamaModelName, getMistralModelName, getPreferredProvider, getZaiModelName, getMiniMaxModelName } from './providers';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -69,6 +70,10 @@ const MISTRAL_API_URL = import.meta.env.DEV
 const ZAI_API_URL = import.meta.env.DEV
   ? '/zai/api/paas/v4/chat/completions'
   : '/api/zai/chat';
+
+const MINIMAX_API_URL = import.meta.env.DEV
+  ? '/minimax/v1/chat/completions'
+  : '/api/minimax/chat';
 
 // Mistral Agents API — enables native web search via agent with web_search tool.
 // Dev: Vite proxy rewrites /mistral/ → https://api.mistral.ai/.
@@ -163,7 +168,7 @@ function normalizeModelName(model?: string): string {
 }
 
 export function getContextBudget(
-  provider?: 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'demo',
+  provider?: 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'minimax' | 'demo',
   model?: string,
 ): ContextBudget {
   const normalizedModel = normalizeModelName(model);
@@ -1401,10 +1406,76 @@ export async function streamZaiChat(
 }
 
 // ---------------------------------------------------------------------------
+// MiniMax streaming
+// ---------------------------------------------------------------------------
+
+export async function streamMiniMaxChat(
+  messages: ChatMessage[],
+  onToken: (token: string, meta?: ChunkMetadata) => void,
+  onDone: (usage?: StreamUsage) => void,
+  onError: (error: Error) => void,
+  onThinkingToken?: (token: string | null) => void,
+  workspaceContext?: string,
+  hasSandbox?: boolean,
+  modelOverride?: string,
+  systemPromptOverride?: string,
+  scratchpadContent?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const apiKey = getMiniMaxKey();
+  if (!apiKey) {
+    onError(new Error('MiniMax API key not configured'));
+    return;
+  }
+
+  return streamSSEChat(
+    {
+      name: 'MiniMax',
+      apiUrl: MINIMAX_API_URL,
+      apiKey,
+      model: modelOverride || getMiniMaxModelName(),
+      connectTimeoutMs: 30_000,
+      idleTimeoutMs: 60_000,
+      stallTimeoutMs: 30_000,
+      totalTimeoutMs: 180_000,
+      errorMessages: {
+        keyMissing: 'MiniMax API key not configured',
+        connect: (s) => `MiniMax API didn't respond within ${s}s — server may be down.`,
+        idle: (s) => `MiniMax API stream stalled — no data for ${s}s.`,
+        stall: (s) => `MiniMax API stream stalled — receiving data but no content for ${s}s. The model may be stuck.`,
+        total: (s) => `MiniMax API response exceeded ${s}s total time limit.`,
+        network: 'Cannot reach MiniMax — network error. Check your connection.',
+      },
+      parseError: (p, f) => parseProviderError(p, f, true),
+      checkFinishReason: (c) => hasFinishReason(c, ['stop', 'length']),
+      providerType: 'minimax',
+      bodyTransform: (body) => {
+        // MiniMax clamps temperature to (0.0, 1.0] — values outside this range return errors
+        const temp = typeof body.temperature === 'number' ? body.temperature : undefined;
+        if (temp !== undefined) {
+          body.temperature = Math.min(Math.max(temp, 0.01), 1.0);
+        }
+        return body;
+      },
+    },
+    messages,
+    onToken,
+    onDone,
+    onError,
+    onThinkingToken,
+    workspaceContext,
+    hasSandbox,
+    systemPromptOverride,
+    scratchpadContent,
+    signal,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Active provider detection
 // ---------------------------------------------------------------------------
 
-export type ActiveProvider = 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'demo';
+export type ActiveProvider = 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'minimax' | 'demo';
 
 /**
  * Determine which provider is active.
@@ -1420,18 +1491,21 @@ export function getActiveProvider(): ActiveProvider {
   const hasKimi = Boolean(getMoonshotKey());
   const hasMistral = Boolean(getMistralKey());
   const hasZai = Boolean(getZaiKey());
+  const hasMiniMax = Boolean(getMiniMaxKey());
 
   // Honour explicit preference when the key is available
   if (preferred === 'ollama' && hasOllama) return 'ollama';
   if (preferred === 'moonshot' && hasKimi) return 'moonshot';
   if (preferred === 'mistral' && hasMistral) return 'mistral';
   if (preferred === 'zai' && hasZai) return 'zai';
+  if (preferred === 'minimax' && hasMiniMax) return 'minimax';
 
   // No preference (or preferred key was removed) — first available
   if (hasKimi) return 'moonshot';
   if (hasOllama) return 'ollama';
   if (hasMistral) return 'mistral';
   if (hasZai) return 'zai';
+  if (hasMiniMax) return 'minimax';
   return 'demo';
 }
 
@@ -1444,6 +1518,7 @@ export function getProviderStreamFn(provider: ActiveProvider) {
     case 'ollama':  return { providerType: 'ollama' as const,  streamFn: streamOllamaChat };
     case 'mistral': return { providerType: 'mistral' as const, streamFn: streamMistralChat };
     case 'zai': return { providerType: 'zai' as const, streamFn: streamZaiChat };
+    case 'minimax': return { providerType: 'minimax' as const, streamFn: streamMiniMaxChat };
     default:        return { providerType: 'moonshot' as const, streamFn: streamMoonshotChat };
   }
 }
@@ -1490,6 +1565,10 @@ export async function streamChat(
 
   if (provider === 'zai') {
     return streamZaiChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, modelOverride, undefined, scratchpadContent, signal);
+  }
+
+  if (provider === 'minimax') {
+    return streamMiniMaxChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, modelOverride, undefined, scratchpadContent, signal);
   }
 
   return streamMoonshotChat(messages, onToken, onDone, onError, onThinkingToken, workspaceContext, hasSandbox, modelOverride, undefined, scratchpadContent, signal);

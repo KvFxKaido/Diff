@@ -11,8 +11,9 @@ import { useMoonshotKey } from '@/hooks/useMoonshotKey';
 import { useOllamaConfig } from '@/hooks/useOllamaConfig';
 import { useMistralConfig } from '@/hooks/useMistralConfig';
 import { useZaiConfig } from '@/hooks/useZaiConfig';
+import { useMiniMaxConfig } from '@/hooks/useMiniMaxConfig';
 import { useTavilyConfig } from '@/hooks/useTavilyConfig';
-import { getPreferredProvider, setPreferredProvider, clearPreferredProvider, ZAI_MODELS, type PreferredProvider } from '@/lib/providers';
+import { getPreferredProvider, setPreferredProvider, clearPreferredProvider, ZAI_MODELS, MINIMAX_MODELS, type PreferredProvider } from '@/lib/providers';
 import { getActiveProvider, getContextMode, setContextMode, type ContextMode } from '@/lib/orchestrator';
 import { fetchOllamaModels, fetchMistralModels } from '@/lib/model-catalog';
 import { useSandbox } from '@/hooks/useSandbox';
@@ -224,6 +225,7 @@ function App() {
   const { setKey: setOllamaKey, clearKey: clearOllamaKey, hasKey: hasOllamaKey, model: ollamaModel, setModel: setOllamaModel } = useOllamaConfig();
   const { setKey: setMistralKey, clearKey: clearMistralKey, hasKey: hasMistralKey, model: mistralModel, setModel: setMistralModel } = useMistralConfig();
   const { setKey: setZaiKey, clearKey: clearZaiKey, hasKey: hasZaiKey, model: zaiModel, setModel: setZaiModel } = useZaiConfig();
+  const { setKey: setMiniMaxKey, clearKey: clearMiniMaxKey, hasKey: hasMiniMaxKey, model: miniMaxModel, setModel: setMiniMaxModel } = useMiniMaxConfig();
   const { setKey: setTavilyKey, clearKey: clearTavilyKey, hasKey: hasTavilyKey } = useTavilyConfig();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'you' | 'workspace' | 'ai'>('you');
@@ -235,6 +237,7 @@ function App() {
   const [ollamaKeyInput, setOllamaKeyInput] = useState('');
   const [mistralKeyInput, setMistralKeyInput] = useState('');
   const [zaiKeyInput, setZaiKeyInput] = useState('');
+  const [miniMaxKeyInput, setMiniMaxKeyInput] = useState('');
   const [tavilyKeyInput, setTavilyKeyInput] = useState('');
   const [activeBackend, setActiveBackend] = useState<PreferredProvider | null>(() => getPreferredProvider());
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -248,7 +251,7 @@ function App() {
 
   // Derive display label from actual active provider
   const activeProviderLabel = getActiveProvider();
-  const availableProviders = ([['moonshot', 'Kimi', hasKimiKey], ['ollama', 'Ollama', hasOllamaKey], ['mistral', 'Mistral', hasMistralKey], ['zai', 'Z.ai', hasZaiKey]] as const).filter(([, , has]) => has);
+  const availableProviders = ([['moonshot', 'Kimi', hasKimiKey], ['ollama', 'Ollama', hasOllamaKey], ['mistral', 'Mistral', hasMistralKey], ['zai', 'Z.ai', hasZaiKey], ['minimax', 'MiniMax', hasMiniMaxKey]] as const).filter(([, , has]) => has);
   
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [creatingAgentsMd, setCreatingAgentsMd] = useState(false);
@@ -303,6 +306,7 @@ function App() {
   const isOllamaModelLocked = isModelLocked && lockedProvider === 'ollama';
   const isMistralModelLocked = isModelLocked && lockedProvider === 'mistral';
   const isZaiModelLocked = isModelLocked && lockedProvider === 'zai';
+  const isMiniMaxModelLocked = isModelLocked && lockedProvider === 'minimax';
 
   const refreshModels = useCallback(async (params: {
     hasKey: boolean;
@@ -479,6 +483,10 @@ function App() {
   const zaiModelOptions = useMemo(() => {
     return includeSelectedModel(ZAI_MODELS, zaiModel);
   }, [zaiModel]);
+
+  const miniMaxModelOptions = useMemo(() => {
+    return includeSelectedModel(MINIMAX_MODELS, miniMaxModel);
+  }, [miniMaxModel]);
 
   const copyAllowlistCommand = useCallback(async () => {
     try {
@@ -848,6 +856,11 @@ function App() {
     ensureUnlockedChatForProviderChange();
     setZaiModel(model);
   }, [ensureUnlockedChatForProviderChange, setZaiModel]);
+
+  const handleSelectMiniMaxModelFromChat = useCallback((model: string) => {
+    ensureUnlockedChatForProviderChange();
+    setMiniMaxModel(model);
+  }, [ensureUnlockedChatForProviderChange, setMiniMaxModel]);
 
   // Disconnect: clear everything (both auth methods)
   const handleDisconnect = useCallback(() => {
@@ -1243,6 +1256,15 @@ function App() {
         setZaiKeyInput,
         setZaiKey: setZaiKey,
         clearZaiKey,
+        hasMiniMaxKey,
+        miniMaxModel,
+        setMiniMaxModel,
+        miniMaxModelOptions: MINIMAX_MODELS,
+        isMiniMaxModelLocked: isProviderLocked && lockedProvider === 'minimax',
+        miniMaxKeyInput,
+        setMiniMaxKeyInput,
+        setMiniMaxKey,
+        clearMiniMaxKey,
         hasTavilyKey,
         tavilyKeyInput,
         setTavilyKeyInput,
@@ -1710,6 +1732,10 @@ function App() {
           zaiModelOptions,
           isZaiModelLocked,
           onSelectZaiModel: handleSelectZaiModelFromChat,
+          miniMaxModel,
+          miniMaxModelOptions,
+          isMiniMaxModelLocked,
+          onSelectMiniMaxModel: handleSelectMiniMaxModelFromChat,
         }}
       />
 

@@ -43,6 +43,10 @@ interface ChatInputProps {
     zaiModelOptions: string[];
     isZaiModelLocked: boolean;
     onSelectZaiModel: (model: string) => void;
+    miniMaxModel: string;
+    miniMaxModelOptions: string[];
+    isMiniMaxModelLocked: boolean;
+    onSelectMiniMaxModel: (model: string) => void;
   };
 }
 
@@ -54,6 +58,7 @@ const PROVIDER_LABELS: Record<AIProviderType, string> = {
   ollama: 'Ollama',
   mistral: 'Mistral',
   zai: 'Z.ai',
+  minimax: 'MiniMax',
   demo: 'Demo',
 };
 
@@ -62,6 +67,7 @@ const PROVIDER_ICONS: Record<AIProviderType, string> = {
   ollama: '🦙',
   mistral: '🌪️',
   zai: '🧠',
+  minimax: '〰️',
   demo: '⚡',
 };
 
@@ -235,6 +241,7 @@ export function ChatInput({
     if (selectedProvider === 'mistral') return providerControls.mistralModel;
     if (selectedProvider === 'moonshot') return 'k2.5';
     if (selectedProvider === 'zai') return providerControls.zaiModel;
+    if (selectedProvider === 'minimax') return providerControls.miniMaxModel;
     return 'demo';
   })();
 
@@ -484,6 +491,26 @@ export function ChatInput({
                             ))}
                           </select>
                           {providerControls.isZaiModelLocked && (
+                            <p className="px-1 text-[10px] text-amber-400">Current chat locked; choosing a model starts a new chat.</p>
+                          )}
+                        </>
+                      )}
+
+                      {selectedProvider === 'minimax' && (
+                        <>
+                          <select
+                            value={providerControls.miniMaxModel}
+                            disabled={!canChangeModel || providerControls.miniMaxModelOptions.length === 0}
+                            onChange={(e) => providerControls.onSelectMiniMaxModel(e.target.value)}
+                            className="h-8 w-full rounded-lg border border-[#2a3447] bg-[#070a10] px-2.5 text-xs text-[#d7deeb] outline-none focus:border-[#3d5579] disabled:opacity-60"
+                          >
+                            {providerControls.miniMaxModelOptions.map((model) => (
+                              <option key={model} value={model}>
+                                {model}
+                              </option>
+                            ))}
+                          </select>
+                          {providerControls.isMiniMaxModelLocked && (
                             <p className="px-1 text-[10px] text-amber-400">Current chat locked; choosing a model starts a new chat.</p>
                           )}
                         </>

@@ -17,7 +17,12 @@ npm run lint      # Run ESLint
 Create `.env` in this directory, or paste keys in the Settings UI at runtime:
 
 ```env
-VITE_MOONSHOT_API_KEY=...         # Optional — or paste in Settings UI (sk-kimi-...)
+VITE_MOONSHOT_API_KEY=...         # Optional — Kimi For Coding (sk-kimi-...)
+VITE_OLLAMA_API_KEY=...           # Optional — Ollama Cloud
+VITE_MISTRAL_API_KEY=...          # Optional — Mistral Vibe
+VITE_ZAI_API_KEY=...              # Optional — Z.ai
+VITE_MINIMAX_API_KEY=...          # Optional — MiniMax
+VITE_TAVILY_API_KEY=...           # Optional — Tavily web search
 VITE_GITHUB_TOKEN=...             # Optional — higher GitHub rate limits
 VITE_GITHUB_CLIENT_ID=...         # Optional — enables OAuth login
 VITE_GITHUB_OAUTH_PROXY=...       # Optional — required for OAuth token exchange
@@ -25,7 +30,7 @@ VITE_GITHUB_REDIRECT_URI=...      # Optional — exact OAuth callback URL (OAuth
 VITE_GITHUB_APP_REDIRECT_URI=...  # Optional — exact OAuth callback URL (GitHub App flow)
 ```
 
-Without a Kimi key the app runs in demo mode.
+Without any AI key the app prompts for one on first use.
 
 Worker secrets (set via `wrangler secret put`):
 

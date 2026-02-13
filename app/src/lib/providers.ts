@@ -18,6 +18,16 @@ export const ZAI_MODELS: string[] = [
   'glm-5',
 ];
 
+export const MINIMAX_DEFAULT_MODEL = 'MiniMax-M2.5';
+
+export const MINIMAX_MODELS: string[] = [
+  'MiniMax-M2.5',
+  'MiniMax-M2.5-highspeed',
+  'MiniMax-M2.1',
+  'MiniMax-M2.1-highspeed',
+  'MiniMax-M2',
+];
+
 export const PROVIDERS: AIProviderConfig[] = [
   {
     type: 'moonshot',
@@ -138,6 +148,36 @@ export const PROVIDERS: AIProviderConfig[] = [
       },
     ],
   },
+  {
+    type: 'minimax',
+    name: 'MiniMax',
+    description: 'MiniMax API — M2.5 and other models (OpenAI-compatible)',
+    envKey: 'VITE_MINIMAX_API_KEY',
+    envUrl: 'https://platform.minimax.io',
+    models: [
+      {
+        id: MINIMAX_DEFAULT_MODEL,
+        name: 'MiniMax M2.5 (Orchestrator)',
+        provider: 'minimax',
+        role: 'orchestrator',
+        context: 200_000,
+      },
+      {
+        id: MINIMAX_DEFAULT_MODEL,
+        name: 'MiniMax M2.5 (Coder)',
+        provider: 'minimax',
+        role: 'coder',
+        context: 200_000,
+      },
+      {
+        id: MINIMAX_DEFAULT_MODEL,
+        name: 'MiniMax M2.5 (Auditor)',
+        provider: 'minimax',
+        role: 'auditor',
+        context: 200_000,
+      },
+    ],
+  },
 ];
 
 export function getProvider(type: AIProviderType): AIProviderConfig | undefined {
@@ -169,6 +209,10 @@ export function getModelForRole(
   }
   if (type === 'zai') {
     const userModel = getZaiModelName();
+    return { ...model, id: userModel };
+  }
+  if (type === 'minimax') {
+    const userModel = getMiniMaxModelName();
     return { ...model, id: userModel };
   }
   return model;
@@ -204,17 +248,21 @@ const zaiModel = createModelNameStorage('zai_model', ZAI_DEFAULT_MODEL);
 export const getZaiModelName = zaiModel.get;
 export const setZaiModelName = zaiModel.set;
 
+const miniMaxModel = createModelNameStorage('minimax_model', MINIMAX_DEFAULT_MODEL);
+export const getMiniMaxModelName = miniMaxModel.get;
+export const setMiniMaxModelName = miniMaxModel.set;
+
 // ---------------------------------------------------------------------------
 // Provider preference — user picks which backend to use
 // ---------------------------------------------------------------------------
 
 const PREFERRED_PROVIDER_KEY = 'preferred_provider';
 
-export type PreferredProvider = 'moonshot' | 'ollama' | 'mistral' | 'zai';
+export type PreferredProvider = 'moonshot' | 'ollama' | 'mistral' | 'zai' | 'minimax';
 
 export function getPreferredProvider(): PreferredProvider | null {
   const stored = safeStorageGet(PREFERRED_PROVIDER_KEY);
-  if (stored === 'moonshot' || stored === 'ollama' || stored === 'mistral' || stored === 'zai') return stored;
+  if (stored === 'moonshot' || stored === 'ollama' || stored === 'mistral' || stored === 'zai' || stored === 'minimax') return stored;
   return null;
 }
 

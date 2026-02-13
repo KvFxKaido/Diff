@@ -157,6 +157,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/zai/, ''),
       },
+      '/minimax': {
+        target: 'https://api.minimax.io',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/minimax/, ''),
+      },
       '/api': {
         target: API_PROXY_TARGET,
         changeOrigin: true,

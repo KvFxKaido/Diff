@@ -28,7 +28,7 @@ Push is a personal chat interface backed by role-based AI agents. Select a repo,
 Push is for developers who:
 
 - **Hate burning API credits** — Use services with predictable monthly costs, not per-token surprises
-- **Already subscribe to AI services** — Use your existing Kimi, Mistral, or Ollama Cloud subscription
+- **Already subscribe to AI services** — Use your existing Kimi, Mistral, Ollama Cloud, Z.ai, or MiniMax subscription
 - **Want mobile-native workflows** — Designed for momentum and decision-making on the go, not replacing your IDE
 - **Like owning their tools** — Open source and architecturally self-hostable. While it uses Cloudflare and Modal by default, the codebase is designed for full control and can be self-hosted for maximum privacy.
 
@@ -41,7 +41,7 @@ The app is free. The AI requires a subscription — but you pick which one, and 
 | Framework | React 19, TypeScript 5.9 |
 | Build | Vite 7 |
 | Styling | Tailwind CSS 3, shadcn/ui (Radix primitives) |
-| AI | Kimi For Coding, Mistral Vibe, Ollama Cloud, or Z.ai — subscription-based, generous API allowances |
+| AI | Kimi For Coding, Mistral Vibe, Ollama Cloud, Z.ai, or MiniMax — subscription-based, generous API allowances |
 | Sandbox | Modal (serverless containers) |
 | Auth | GitHub App or Personal Access Token |
 | APIs | GitHub REST API |
@@ -72,6 +72,7 @@ VITE_MOONSHOT_API_KEY=...              # Kimi For Coding (API access included wi
 VITE_MISTRAL_API_KEY=...              # Mistral Vibe (API access included with subscription)
 VITE_OLLAMA_API_KEY=...               # Ollama Cloud (API access included with subscription)
 VITE_ZAI_API_KEY=...                  # Z.ai (API access included with subscription)
+VITE_MINIMAX_API_KEY=...              # MiniMax (API access included with subscription)
 VITE_TAVILY_API_KEY=...               # Optional — Tavily web search (premium LLM-optimized results)
 VITE_GITHUB_TOKEN=...                 # Optional — PAT for GitHub API access
 VITE_GITHUB_CLIENT_ID=...             # Optional — GitHub App OAuth client ID
@@ -108,7 +109,7 @@ Use it for quick experiments, learning the interface, or when you're on a device
 
 ## Production
 
-Deployed on Cloudflare Workers. The worker at `app/worker.ts` proxies `/api/kimi/chat` to Kimi For Coding, `/api/ollama/chat` to Ollama Cloud, `/api/mistral/chat` to Mistral Vibe, and `/api/sandbox/*` to Modal web endpoints, with API keys stored as runtime secrets. Static assets are served by the Cloudflare Assets layer. The Modal sandbox backend at `sandbox/app.py` is deployed separately via `modal deploy`.
+Deployed on Cloudflare Workers. The worker at `app/worker.ts` proxies `/api/kimi/chat` to Kimi For Coding, `/api/ollama/chat` to Ollama Cloud, `/api/mistral/chat` to Mistral Vibe, `/api/zai/chat` to Z.ai, `/api/minimax/chat` to MiniMax, and `/api/sandbox/*` to Modal web endpoints, with API keys stored as runtime secrets. Static assets are served by the Cloudflare Assets layer. The Modal sandbox backend at `sandbox/app.py` is deployed separately via `modal deploy`.
 
 For browser tools, set Worker secrets `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`. The Worker injects these server-side for `/api/sandbox/browser-screenshot` and `/api/sandbox/browser-extract` so browser credentials never reach the client.
 
@@ -125,7 +126,7 @@ Role-based agent system. **Models are replaceable; roles are not.**
 - **Coder** — autonomous code implementation in sandbox (runs until done, with 90s per-round timeout)
 - **Auditor** — pre-commit safety gate, binary SAFE/UNSAFE verdict
 
-Four AI backends are supported: **Kimi For Coding**, **Mistral Vibe**, **Ollama Cloud**, and **Z.ai**. All use OpenAI-compatible streaming. The active backend serves all three roles. Provider selection is locked per chat after the first user message; start a new chat to switch providers.
+Five AI backends are supported: **Kimi For Coding**, **Mistral Vibe**, **Ollama Cloud**, **Z.ai**, and **MiniMax**. All use OpenAI-compatible streaming. The active backend serves all three roles. Provider selection is locked per chat after the first user message; start a new chat to switch providers.
 
 There is always exactly one **Active Branch** per repo session — it is the commit target, push target, diff base, and chat context. Switching branches tears down the sandbox and creates a fresh one (clean state). Workspace actions for files, diff, console, scratchpad, and commit/push are unified in the **Workspace Hub**. All merges go through **GitHub Pull Requests** — Push never runs `git merge` locally. The merge flow: check working tree → find/create PR → Auditor review → check eligibility → merge via GitHub API (merge commit strategy). Chats are permanently **branch-scoped** and grouped by branch in the history drawer.
 
@@ -152,14 +153,14 @@ Push/
 │   ├── app.py             # Modal Python App — sandbox web endpoints
 │   └── requirements.txt
 ├── app/
-│   ├── worker.ts          # Cloudflare Worker — Kimi/Ollama/Mistral proxy + sandbox proxy
+│   ├── worker.ts          # Cloudflare Worker — Kimi/Ollama/Mistral/Z.ai/MiniMax proxy + sandbox proxy
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── chat/           # ChatContainer, ChatInput, MessageBubble, AgentStatusBar, WorkspaceHubSheet, RepoAndChatSelector, RepoChatDrawer, SandboxExpiryBanner, BranchCreateSheet, MergeFlowSheet
 │   │   │   ├── cards/          # PRCard, SandboxCard, DiffPreviewCard, AuditVerdictCard, FileSearchCard, CommitReviewCard, TestResultsCard, EditorCard, BrowserScreenshotCard, BrowserExtractCard, and more
 │   │   │   ├── filebrowser/    # FileActionsSheet, CommitPushSheet, FileEditor, UploadButton
 │   │   │   └── ui/             # shadcn/ui component library
-│   │   ├── hooks/              # useChat, useSandbox, useScratchpad, useUserProfile, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useProtectMain, useTavilyConfig, useUsageTracking
+│   │   ├── hooks/              # useChat, useSandbox, useScratchpad, useUserProfile, useGitHubAuth, useGitHubAppAuth, useRepos, useFileBrowser, useCodeMirror, useCommitPush, useProtectMain, useZaiConfig, useMiniMaxConfig, useTavilyConfig, useUsageTracking
 │   │   ├── lib/                # Agent logic, tool protocols, git operations, web search, model catalog, prompts
 │   │   ├── sections/           # OnboardingScreen, RepoPicker, FileBrowser, HomeScreen
 │   │   └── types/              # TypeScript definitions

@@ -18,6 +18,7 @@ const PROVIDER_LABELS: Record<AIProviderType, string> = {
   moonshot: 'Kimi',
   mistral: 'Mistral',
   zai: 'Z.ai',
+  minimax: 'MiniMax',
   demo: 'Demo',
 };
 
@@ -111,6 +112,16 @@ export interface SettingsAIProps {
   setZaiKeyInput: (v: string) => void;
   setZaiKey: (v: string) => void;
   clearZaiKey: () => void;
+  // MiniMax
+  hasMiniMaxKey: boolean;
+  miniMaxModel: string;
+  setMiniMaxModel: (v: string) => void;
+  miniMaxModelOptions: string[];
+  isMiniMaxModelLocked: boolean;
+  miniMaxKeyInput: string;
+  setMiniMaxKeyInput: (v: string) => void;
+  setMiniMaxKey: (v: string) => void;
+  clearMiniMaxKey: () => void;
   // Tavily
   hasTavilyKey: boolean;
   tavilyKeyInput: string;
@@ -716,7 +727,7 @@ export function SettingsSheet({
               <div className="flex items-center gap-1.5">
                 <div
                   className={`h-2 w-2 rounded-full ${
-                    ai.hasOllamaKey || ai.hasKimiKey || ai.hasMistralKey || ai.hasZaiKey ? 'bg-emerald-500' : 'bg-push-fg-dim'
+                    ai.hasOllamaKey || ai.hasKimiKey || ai.hasMistralKey || ai.hasZaiKey || ai.hasMiniMaxKey ? 'bg-emerald-500' : 'bg-push-fg-dim'
                   }`}
                 />
                 <span className="text-xs text-push-fg-secondary">
@@ -1142,6 +1153,86 @@ export function SettingsSheet({
                   </Button>
                   <p className="text-xs text-push-fg-dim">
                     Z.ai API keys are available through subscription plans.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* MiniMax */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-push-fg-secondary">MiniMax</label>
+              {ai.hasMiniMaxKey ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg border border-push-edge bg-push-surface px-3 py-2">
+                    <p className="text-sm text-push-fg-secondary font-mono">Key Saved</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        ai.clearMiniMaxKey();
+                        if (ai.activeBackend === 'minimax') {
+                          ai.clearPreferredProvider();
+                          ai.setActiveBackend(null);
+                        }
+                      }}
+                      className="text-push-fg-dim hover:text-red-400 transition-colors"
+                      aria-label="Remove MiniMax key"
+                      title="Remove key"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-push-fg-muted shrink-0">Default model:</span>
+                    <select
+                      value={ai.miniMaxModel}
+                      onChange={(e) => ai.setMiniMaxModel(e.target.value)}
+                      disabled={ai.miniMaxModelOptions.length === 0}
+                      className="flex-1 rounded-md border border-push-edge bg-push-surface px-2 py-1 text-xs text-push-fg font-mono focus:outline-none focus:border-push-sky/50 disabled:opacity-50"
+                    >
+                      {ai.miniMaxModelOptions.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {ai.isMiniMaxModelLocked && ai.lockedModel && (
+                    <p className="text-xs text-amber-400">
+                      Current chat remains locked to {ai.lockedModel}. Default applies on new chats.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={ai.miniMaxKeyInput}
+                    onChange={(e) => ai.setMiniMaxKeyInput(e.target.value)}
+                    placeholder="MiniMax API key"
+                    className="w-full rounded-lg border border-push-edge bg-push-surface px-3 py-2 text-sm text-push-fg placeholder:text-push-fg-dim focus:outline-none focus:border-push-sky/50"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && ai.miniMaxKeyInput.trim()) {
+                        ai.setMiniMaxKey(ai.miniMaxKeyInput.trim());
+                        ai.setMiniMaxKeyInput('');
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (ai.miniMaxKeyInput.trim()) {
+                        ai.setMiniMaxKey(ai.miniMaxKeyInput.trim());
+                        ai.setMiniMaxKeyInput('');
+                      }
+                    }}
+                    disabled={!ai.miniMaxKeyInput.trim()}
+                    className="text-push-fg-secondary hover:text-push-fg w-full justify-start"
+                  >
+                    Save MiniMax key
+                  </Button>
+                  <p className="text-xs text-push-fg-dim">
+                    MiniMax API key from platform.minimax.io.
                   </p>
                 </div>
               )}
