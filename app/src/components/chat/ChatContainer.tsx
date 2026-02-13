@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState } from 'react';
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { ArrowDown } from 'lucide-react';
 import type { ChatMessage, AgentStatus, ActiveRepo, CardAction } from '@/types';
 import { MessageBubble } from './MessageBubble';
@@ -110,49 +110,43 @@ function EmptyState({
 export function ChatContainer({ messages, agentStatus, activeRepo, isSandboxMode, onSuggestion, onCardAction }: ChatContainerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
   const lastMessageRef = useRef<ChatMessage | null>(null);
   const lastMessageContent = messages.length > 0 ? messages[messages.length - 1]?.content : '';
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateBottomState = useCallback((container: HTMLDivElement) => {
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    setIsAtBottom(distanceFromBottom <= AT_BOTTOM_THRESHOLD_PX);
+  }, []);
 
   // Track scroll position and show/hide scroll button
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    updateBottomState(container);
+
     const handleScroll = () => {
-      // Hide button while actively scrolling
-      setShowScrollButton(false);
+      updateBottomState(container);
+      setIsUserScrolling(true);
 
-      // Clear any pending timeouts
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-
-      // Set timeout to show button after scrolling stops (1s inactivity)
-      scrollTimeoutRef.current = setTimeout(() => {
-        const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-        
-        // Threshold of 150px for visibility
-        if (distanceFromBottom > 150) {
-          setShowScrollButton(true);
-
-          // Show it briefly (hides after 3s of continued inactivity)
-          hideTimeoutRef.current = setTimeout(() => {
-            setShowScrollButton(false);
-          }, 3000);
-        }
-      }, 1000);
+      if (scrollIdleTimeoutRef.current) clearTimeout(scrollIdleTimeoutRef.current);
+      scrollIdleTimeoutRef.current = setTimeout(() => {
+        updateBottomState(container);
+        setIsUserScrolling(false);
+        scrollIdleTimeoutRef.current = null;
+      }, SCROLL_IDLE_MS);
     };
 
-    container.addEventListener('scroll', handleScroll);
+    container.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       container.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+      if (scrollIdleTimeoutRef.current) clearTimeout(scrollIdleTimeoutRef.current);
     };
-  }, []);
+  }, [updateBottomState]);
 
   // Auto-scroll to bottom when new messages arrive or content streams in
   useEffect(() => {
