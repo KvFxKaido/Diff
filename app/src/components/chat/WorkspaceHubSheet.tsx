@@ -90,6 +90,78 @@ const PHASE_LABELS: Record<CommitPhase, string> = {
   error: 'Failed',
 };
 
+const COMMIT_MESSAGE_SUGGEST_TIMEOUT_MS = 30_000;
+
+const COMMIT_MESSAGE_SUGGEST_SYSTEM_PROMPT = `You generate git commit messages.
+
+Return ONLY one line, nothing else, in this strict format:
+<type>: <subject>
+
+Rules:
+- Allowed types: feat, fix, refactor, docs, test, chore, ci, build, style, perf, revert
+- Do not include a scope
+- Use imperative mood
+- No trailing period
+- Keep total line length <= 72 characters
+- No quotes, no markdown, no bullets`;
+
+function truncateCommitSubject(subject: string, type: string): string {
+  const maxTotalLength = 72;
+  const prefix = `${type}: `;
+  const maxSubjectLength = Math.max(1, maxTotalLength - prefix.length);
+  return subject.length <= maxSubjectLength
+    ? subject
+    : subject.slice(0, maxSubjectLength).trimEnd();
+}
+
+function normalizeSuggestedCommitMessage(raw: string): string {
+  let text = raw.trim();
+  const fenceMatch = text.match(/```(?:text)?\s*\n?([\s\S]*?)\n?\s*```/i);
+  if (fenceMatch) text = fenceMatch[1].trim();
+
+  const firstLine = text
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) || '';
+
+  let candidate = firstLine
+    .replace(/^[-*]\s*/, '')
+    .replace(/^(commit message|message)\s*:\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const allowedTypes = new Set([
+    'feat',
+    'fix',
+    'refactor',
+    'docs',
+    'test',
+    'chore',
+    'ci',
+    'build',
+    'style',
+    'perf',
+    'revert',
+  ]);
+
+  const conventionalMatch = candidate.match(/^([a-z]+)(?:\([^)]+\))?:\s+(.+)$/i);
+  if (conventionalMatch) {
+    const type = conventionalMatch[1].toLowerCase();
+    const subject = conventionalMatch[2].trim().replace(/\.$/, '');
+    if (allowedTypes.has(type) && subject) {
+      return `${type}: ${truncateCommitSubject(subject, type)}`;
+    }
+  }
+
+  if (!candidate) {
+    return 'chore: update workspace changes';
+  }
+
+  candidate = candidate.replace(/\.$/, '');
+  return `chore: ${truncateCommitSubject(candidate, 'chore')}`;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
