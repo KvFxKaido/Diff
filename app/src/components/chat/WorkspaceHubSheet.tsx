@@ -195,7 +195,8 @@ export function WorkspaceHubSheet({
 
   // Commit flow state (replaces old hand-rolled commit/push)
   const [commitPhase, setCommitPhase] = useState<CommitPhase>('idle');
-  const [commitMessage, setCommitMessage] = useState('chore: update workspace changes');
+  const [commitMessage, setCommitMessage] = useState('');
+  const [suggestingCommitMessage, setSuggestingCommitMessage] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
 
   // Branch dropdown
@@ -330,6 +331,84 @@ export function WorkspaceHubSheet({
       setCommitError(err instanceof Error ? err.message : 'Commit failed');
     }
   }, [sandboxId, commitMessage, blockedByProtectMain, branchProps.defaultBranch]);
+
+  const suggestCommitMessage = useCallback(async () => {
+    if (!sandboxId) {
+      toast.error('Sandbox is not ready.');
+      return;
+    }
+
+    const activeProvider = getActiveProvider();
+    if (activeProvider === 'demo') {
+      toast.error('No AI provider configured. Add an API key in Settings.');
+      return;
+    }
+
+    setSuggestingCommitMessage(true);
+    try {
+      const diffResult = await getSandboxDiff(sandboxId);
+      if (!diffResult.diff) {
+        toast.error('No local changes to summarize.');
+        return;
+      }
+
+      const stats = parseDiffStats(diffResult.diff);
+      const diffSnippet = diffResult.diff.slice(0, 20_000);
+      const { streamFn } = getProviderStreamFn(activeProvider);
+      const modelId = getModelForRole(activeProvider, 'orchestrator')?.id;
+
+      const prompt = [
+        `Generate a commit message for this diff.`,
+        `Changed files: ${stats.filesChanged}, additions: ${stats.additions}, deletions: ${stats.deletions}.`,
+        `Return exactly one commit-message line.`,
+        '',
+        '```diff',
+        diffSnippet,
+        '```',
+      ].join('\n');
+
+      const llmMessages: ChatMessage[] = [
+        {
+          id: 'commit-message-suggest',
+          role: 'user',
+          content: prompt,
+          timestamp: Date.now(),
+        },
+      ];
+
+      const { promise, getAccumulated } = streamWithTimeout(
+        COMMIT_MESSAGE_SUGGEST_TIMEOUT_MS,
+        `Commit message suggestion timed out after ${COMMIT_MESSAGE_SUGGEST_TIMEOUT_MS / 1000}s.`,
+        (onToken, onDone, onError) => {
+          streamFn(
+            llmMessages,
+            onToken,
+            onDone,
+            onError,
+            undefined,
+            undefined,
+            false,
+            modelId,
+            COMMIT_MESSAGE_SUGGEST_SYSTEM_PROMPT,
+          );
+        },
+      );
+
+      const streamError = await promise;
+      if (streamError) {
+        throw streamError;
+      }
+
+      const suggested = normalizeSuggestedCommitMessage(getAccumulated());
+      setCommitMessage(suggested);
+      toast.success('Commit message suggested.');
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'Suggestion failed';
+      toast.error(detail);
+    } finally {
+      setSuggestingCommitMessage(false);
+    }
+  }, [sandboxId]);
 
   // ---- Branch switching with confirmation ----
   const handleBranchSwitch = useCallback((branch: string) => {
