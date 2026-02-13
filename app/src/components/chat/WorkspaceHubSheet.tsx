@@ -9,6 +9,7 @@ import {
   GitMerge,
   Loader2,
   RefreshCw,
+  Sparkles,
   StickyNote,
   TerminalSquare,
   Trash2,
@@ -19,7 +20,9 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { runAuditor } from '@/lib/auditor-agent';
 import { execInSandbox, getSandboxDiff } from '@/lib/sandbox-client';
 import { parseDiffStats } from '@/lib/diff-utils';
-import { getActiveProvider } from '@/lib/orchestrator';
+import { getActiveProvider, getProviderStreamFn } from '@/lib/orchestrator';
+import { getModelForRole } from '@/lib/providers';
+import { streamWithTimeout } from '@/lib/utils';
 import { HubScratchpadTab, HubConsoleTab, HubFilesTab, HubDiffTab } from './hub-tabs';
 import type { ScratchpadMemory } from '@/hooks/useScratchpad';
 import type { ChatMessage, DiffPreviewCardData } from '@/types';
