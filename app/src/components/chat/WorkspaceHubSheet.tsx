@@ -685,6 +685,23 @@ export function WorkspaceHubSheet({
                   className="h-8 min-w-0 flex-1 rounded-lg border border-push-edge bg-push-surface px-2.5 text-xs text-push-fg-secondary outline-none transition-colors placeholder:text-push-fg-dim focus:border-push-sky/50 disabled:opacity-50"
                 />
                 <button
+                  onClick={() => void suggestCommitMessage()}
+                  disabled={
+                    suggestingCommitMessage ||
+                    (commitPhase !== 'idle' && commitPhase !== 'success' && commitPhase !== 'error') ||
+                    !sandboxReady
+                  }
+                  title="Suggest commit message from current diff"
+                  className="flex h-8 items-center gap-1 rounded-lg border border-push-edge bg-[#080b10]/95 px-2 text-[11px] text-push-fg-dim transition-colors hover:border-push-edge-hover hover:text-push-fg-secondary disabled:opacity-50"
+                >
+                  {suggestingCommitMessage ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  AI
+                </button>
+                <button
                   onClick={() => {
                     if (commitPhase === 'success' || commitPhase === 'error') {
                       setCommitPhase('idle');
