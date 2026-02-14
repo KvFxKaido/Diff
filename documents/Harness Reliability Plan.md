@@ -1,7 +1,7 @@
 # Push Harness Reliability Plan (Hashline Included)
 
 ## Status
-- Last updated: 2026-02-13
+- Last updated: 2026-02-14
 - State: Active planning
 - Intent: Improve coding task success by upgrading the harness, not just swapping models
 
@@ -35,6 +35,12 @@ Hashline remains a candidate within this larger plan.
 - Console now surfaces Coder status events, not only Orchestrator/tool logs.
 - Chat now preserves assistant dialogue even when a tool call is emitted in the same message.
 - Snapshot and restore primitives exist for sandbox continuity.
+- **Garbled tool-call recovery** (shipped 2026-02-14):
+  - `repairToolJson` fixes trailing commas, single quotes, unquoted keys.
+  - `detectTruncatedToolCall` catches unbalanced-brace truncation.
+  - `diagnoseToolCallFailure` replaces the narrow `detectMalformedToolAttempt` regex with three-phase diagnosis (truncated → validation failure → broad pattern match).
+  - Garbled assistant messages now marked `isToolCall: true` so `stripToolCallPayload` hides raw JSON from users.
+  - Error feedback is specific (names the tool, describes the failure mode) — model can self-correct in one retry instead of looping.
 
 ## Main Harness Opportunities
 
@@ -58,6 +64,11 @@ If gate passes, MVP scope only:
 - Keep `sandbox_write_file` fallback
 - Ship behind `hashlineEditEnabled` flag
 
+Patterns from external research (Claude Code `str_replace` + Codex `apply_patch`):
+- **Progressive fuzzy matching**: if hash doesn't match but line content is close (trimmed whitespace, Levenshtein), apply with warning rather than hard-reject. Both production tools have fuzzy fallbacks; hard-match-only is too brittle.
+- **Structured error detail**: on edit failure, return expected vs actual content for the failing ref, not just "invalid ref." Both tools return enough context for the model to self-correct in one retry.
+- **No line numbers as edit targets**: both tools avoid absolute line numbers for edits (Codex uses context anchors, Claude uses string content). Hashline's content-addressed hashes align with this — use hashes as anchors, treat line numbers as hints only.
+
 Success targets:
 - >= +10pp edit-apply success rate vs baseline
 - >= 20% reduction in retry loops
@@ -74,9 +85,14 @@ Problem:
 - Edit flows over-read large files; tokens and truncation pressure increase.
 
 Scope:
-- Add line-range reads (`start_line`, `end_line`) for sandbox file reads.
+- Add `start_line` and `end_line` optional args to `sandbox_read_file`.
+- Include line-number prefix in read output (`cat -n` style) so the model can reference locations in subsequent edits.
+- Default to full-file read (capped at ~2000 lines, matching Claude Code's default). Lines > 2000 chars truncated.
 - Keep annotation opt-in and targeted to edit flows.
 - Ensure UI continues to show clean, non-annotated text.
+
+Pattern from Claude Code:
+- Model needs line numbers in *read output* to orient edits, but should not use them as *edit targets*. Read with line numbers → edit with content-anchored references. This is exactly what hashline does.
 
 Success signal:
 - reduced average read payload size in edit-heavy tasks
@@ -87,14 +103,25 @@ Success signal:
 Problem:
 - Minor tool-call formatting failures still cost rounds/time.
 
-Scope:
-- Continue hardening malformed/unimplemented tool-call feedback loops.
-- Standardize structured retry hints in tool errors.
-- Track malformed-call rate by provider/model.
+Done (2026-02-14):
+- [x] Three-phase garbled tool-call diagnosis (`diagnoseToolCallFailure`).
+- [x] JSON repair for common LLM garbling (trailing commas, single quotes, unquoted keys).
+- [x] Truncated tool-call detection (unbalanced braces).
+- [x] Specific error feedback (names the tool, describes failure mode).
+- [x] Garbled messages hidden from chat UI via `isToolCall: true` + `stripToolCallPayload` extension.
+
+Remaining scope:
+- Add malformed-call rate metric by provider/model — instrument `diagnoseToolCallFailure` calls.
+- Surface provider compliance data in settings or debug view.
+- Consider native function calling for providers that support it (reduces prompt-engineering tax, but must coexist with JSON-block providers).
+
+Context note:
+- Both Claude Code and Codex CLI avoid this problem entirely via native API-level function calling. Push's prompt-engineered protocol is the cost of provider-agnostic design. The garbled recovery layer is the right investment; tracking per-provider compliance rates will show where the cost is highest.
 
 Success signal:
 - fewer recoverable tool-loop stalls
 - lower average rounds per successful task
+- per-provider malformed-call rate data available for comparison
 
 ### Track D: Long-Run Resilience (Mobile Background Reality)
 
@@ -106,6 +133,13 @@ Scope (design now, implementation separate):
 - reconnectable job timelines
 - cancel/resume controls
 
+Design doc: `documents/Background Coder Tasks Plan.md`
+
+Patterns from external research:
+- **Pre-approved tool allowlist** (from Claude Code background agents): background jobs declare their allowed tools at start time. Anything not pre-approved → auto-deny. No runtime permission prompts. For Push: `POST /api/jobs/start` should include the full tool allowlist.
+- **SSE with event replay** (over polling): Claude Code uses polling for background tasks, but Push is mobile-first. Polling drains battery and is unreliable after sleep. SSE from the Durable Object with automatic reconnect + replay from last-seen event ID is the right model. The DO already holds the event log.
+- **Context compaction within background jobs**: long-running coder loops need their own compression. The existing 60KB context cap is the right instinct. Background jobs should checkpoint summaries to the event log so the reconnecting client can reconstruct progress without replaying every tool call.
+
 This is a harness-level capability and should be planned independently of hashline.
 
 ### Track E: Operator Visibility
@@ -116,25 +150,29 @@ Problem:
 Scope:
 - Keep improving console signal quality (role/source labeling, useful status granularity).
 - Keep tool calls and dialogue understandable in chat.
-- Preserve actionable logs for “why task failed” analysis.
+- Preserve actionable logs for "why task failed" analysis.
+- Expand `toolMeta` to all error paths (not just garbled calls) — every tool failure should carry enough metadata for post-hoc debugging without reading the full conversation.
 
 Success signal:
 - faster root-cause diagnosis for failed tasks
-- lower “mystery failure” incidents during dogfooding
+- lower "mystery failure" incidents during dogfooding
 
 ## Prioritization (Now / Next / Later)
 
 Now:
 1. Run Track A micro-test gate.
-2. Add minimal instrumentation needed for Track A/B comparison.
+2. Add Track C malformed-call rate metric by provider/model (small — instrument `diagnoseToolCallFailure`).
+3. Add minimal instrumentation needed for Track A/B comparison.
 
 Next:
-1. If gate passes: implement Track A MVP behind flag.
-2. Implement Track B line-range reads (small, broadly useful).
+1. If gate passes: implement Track A MVP behind flag (include fuzzy matching + structured error detail).
+2. Implement Track B line-range reads with `cat -n` style output (small, broadly useful).
+3. Expand `toolMeta` coverage on remaining error paths (Track E).
 
 Later:
-1. Track D server-side background jobs.
+1. Track D server-side background jobs (see `documents/Background Coder Tasks Plan.md`).
 2. Additional Track A ops (`replace_range`, `delete_range`, `insert_before`) only if MVP earns it.
+3. Evaluate native function calling for providers that support it (Track C cost reduction).
 
 ## Measurement Framework
 
@@ -182,6 +220,22 @@ Decision labels: `accept`, `partial`, `reject`.
 | Make Workspace Hub feel like mission control | accept | Fits mobile execution-control positioning | Prioritize Hub v2 diff ergonomics + status visibility |
 | Build-in-public growth metrics and signature feature ideation | hold | Valuable for growth, but secondary to reliability work | Revisit after harness tracks A-D show measurable stability gains |
 | Keep surface area small; hide complexity under the hood | accept | Matches biggest current risk (feature sprawl) | Enforce explicit non-goals and kill criteria for each harness experiment |
+
+## External Research: Claude Code + Codex CLI Patterns (2026-02-14)
+
+Source: architecture comparison of two production CLI coding agents.
+
+| Area | Claude Code Pattern | Codex CLI Pattern | Push Takeaway |
+|---|---|---|---|
+| Edit tool | `str_replace` (exact string match, uniqueness enforced) | `apply_patch` with V4A structured diff (context anchors, progressive fuzzy matching) | Both avoid line numbers as edit targets. Hashline's content-addressed hashes are aligned. Add fuzzy fallback to hashline MVP. |
+| Edit errors | Returns "no match" or "N matches found" — model self-corrects | Returns JSON error with mismatch details | Structured error detail is critical. Hashline errors should include expected vs actual line content. |
+| File reads | `offset`/`limit` params, 2000-line default, `cat -n` format | Shell-based reads | Track B should match Claude Code's pattern: line-range reads with numbered output. |
+| Context | Server-side compaction at 150K tokens + client auto-compact at 95% | Model-native multi-window compaction + session persistence | Push's rolling window + summarization is the right client-side approach. Consider `pause_after_compaction`-style preserved-message injection. |
+| Tool calls | Native API-level function calling (no JSON parsing needed) | Native API-level function calling | Push's prompt-engineered protocol is the cost of provider-agnostic design. Track C recovery layer compensates. Track per-provider compliance. |
+| Background | `run_in_background` on Bash, background subagents with pre-approved permissions | Cloud-side execution, `--resume` for session recovery | Pre-approved tool allowlist at job start. SSE over polling for mobile. Context compaction within background jobs. |
+| Permissions | deny→ask→allow rule chain, OS-level sandbox (bwrap/Seatbelt) | Sandbox mode × approval policy, enterprise-managed config | Push's Modal containers are stronger than OS-level sandboxing. Current Auditor gate is adequate. |
+
+Key conclusion: **Push's prompt-engineered tool protocol is its biggest reliability tax vs production tools, but also its biggest flexibility advantage.** The harness work (garbled recovery, hashline, read efficiency) is specifically about closing the reliability gap while keeping provider-agnostic design.
 
 ## Immediate Next Action
 

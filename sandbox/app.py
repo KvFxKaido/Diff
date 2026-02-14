@@ -349,17 +349,55 @@ def file_ops(data: dict):
     if action == "read":
         if not path:
             return {"error": "Missing sandbox_id or path"}
-        p = sb.exec("cat", path)
+
+        # Optional line-range parameters
+        raw_start = data.get("start_line")
+        raw_end = data.get("end_line")
+        use_range = raw_start is not None or raw_end is not None
+
+        if use_range:
+            try:
+                start_line = int(raw_start) if raw_start is not None else 1
+            except (TypeError, ValueError):
+                return {"error": f"Invalid start_line: {raw_start!r}. Expected a positive integer.", "content": ""}
+
+            try:
+                end_line = int(raw_end) if raw_end is not None else None
+            except (TypeError, ValueError):
+                return {"error": f"Invalid end_line: {raw_end!r}. Expected a positive integer.", "content": ""}
+
+            start_line = max(1, start_line)
+            if end_line is not None and end_line < 1:
+                return {"error": f"Invalid end_line: {end_line}. Expected a positive integer.", "content": ""}
+
+            if end_line is not None and start_line > end_line:
+                return {"error": f"Invalid range: start_line ({start_line}) > end_line ({end_line})", "content": ""}
+
+            # Use sed for line-range reads
+            if end_line is not None:
+                p = sb.exec("sed", "-n", f"{start_line},{end_line}p", path)
+            else:
+                p = sb.exec("sed", "-n", f"{start_line},$p", path)
+        else:
+            p = sb.exec("cat", path)
+
         p.wait()
         if p.returncode != 0:
             stderr = p.stderr.read()
             return {"error": f"Read failed: {stderr}", "content": ""}
 
         content = p.stdout.read()
+        # Version hash is always computed on the full file (stale-write protection)
         version, version_error = _get_file_version(sb, path)
         if version_error:
             return {"error": version_error, "content": ""}
-        return {"content": content[:50_000], "truncated": len(content) > 50_000, "version": version}
+
+        result = {"content": content[:50_000], "truncated": len(content) > 50_000, "version": version}
+        if use_range:
+            result["start_line"] = start_line
+            if end_line is not None:
+                result["end_line"] = end_line
+        return result
 
     if action == "write":
         content = str(data.get("content", ""))

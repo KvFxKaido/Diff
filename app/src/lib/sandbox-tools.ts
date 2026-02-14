@@ -169,7 +169,7 @@ async function createGitHubRepo(
 
 export type SandboxToolCall =
   | { tool: 'sandbox_exec'; args: { command: string; workdir?: string } }
-  | { tool: 'sandbox_read_file'; args: { path: string } }
+  | { tool: 'sandbox_read_file'; args: { path: string; start_line?: number; end_line?: number } }
   | { tool: 'sandbox_search'; args: { query: string; path?: string } }
   | { tool: 'sandbox_write_file'; args: { path: string; content: string; expected_version?: string } }
   | { tool: 'sandbox_list_dir'; args: { path?: string } }
@@ -196,6 +196,19 @@ function getNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function parsePositiveIntegerArg(value: unknown): number | undefined | null {
+  if (value === undefined) return undefined;
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim().length > 0
+      ? Number(value)
+      : Number.NaN;
+
+  if (!Number.isInteger(numeric) || numeric < 1) return null;
+  return numeric;
+}
+
 export function validateSandboxToolCall(parsed: unknown): SandboxToolCall | null {
   const parsedObj = asRecord(parsed);
   if (!parsedObj) return null;
@@ -206,7 +219,11 @@ export function validateSandboxToolCall(parsed: unknown): SandboxToolCall | null
     return { tool: 'sandbox_exec', args: { command: args.command, workdir: typeof args.workdir === 'string' ? args.workdir : undefined } };
   }
   if ((tool === 'sandbox_read_file' || tool === 'read_sandbox_file') && typeof args.path === 'string') {
-    return { tool: 'sandbox_read_file', args: { path: args.path } };
+    const startLine = parsePositiveIntegerArg(args.start_line);
+    const endLine = parsePositiveIntegerArg(args.end_line);
+    if (startLine === null || endLine === null) return null;
+    if (startLine !== undefined && endLine !== undefined && startLine > endLine) return null;
+    return { tool: 'sandbox_read_file', args: { path: args.path, start_line: startLine, end_line: endLine } };
   }
   if ((tool === 'sandbox_search' || tool === 'search_sandbox') && typeof args.query === 'string') {
     return { tool: 'sandbox_search', args: { query: args.query, path: typeof args.path === 'string' ? args.path : undefined } };
@@ -374,7 +391,7 @@ export async function executeSandboxToolCall(
       }
 
       case 'sandbox_read_file': {
-        const result = await readFromSandbox(sandboxId, call.args.path) as FileReadResult & { error?: string };
+        const result = await readFromSandbox(sandboxId, call.args.path, call.args.start_line, call.args.end_line) as FileReadResult & { error?: string };
         const cacheKey = fileVersionKey(sandboxId, call.args.path);
 
         // Handle directory or read errors (e.g. "cat: /path: Is a directory")
@@ -389,12 +406,41 @@ export async function executeSandboxToolCall(
           sandboxFileVersions.delete(cacheKey);
         }
 
+        const isRangeRead = call.args.start_line !== undefined || call.args.end_line !== undefined;
+        const rangeStart = typeof result.start_line === 'number'
+          ? result.start_line
+          : call.args.start_line ?? 1;
+        const rangeEnd = typeof result.end_line === 'number'
+          ? result.end_line
+          : call.args.end_line;
+
+        // For range reads: add cat -n style line numbers to the tool result text
+        // (the model uses these for edit targeting; the card stays clean)
+        let toolResultContent: string;
+        if (isRangeRead && result.content) {
+          const contentLines = result.content.split('\n');
+          // If content ends with a trailing newline, the last split element is empty — don't number it
+          const hasTrailingNewline = result.content.endsWith('\n') && contentLines.length > 1;
+          const linesToNumber = hasTrailingNewline ? contentLines.slice(0, -1) : contentLines;
+          const maxLineNum = Math.max(rangeStart, rangeStart + linesToNumber.length - 1);
+          const padWidth = String(maxLineNum).length;
+          toolResultContent = linesToNumber
+            .map((line, idx) => `${String(rangeStart + idx).padStart(padWidth)}\t${line}`)
+            .join('\n');
+        } else {
+          toolResultContent = result.content;
+        }
+
+        const fileLabel = isRangeRead
+          ? `Lines ${rangeStart}-${rangeEnd ?? '∞'} of ${call.args.path}`
+          : `File: ${call.args.path}`;
+
         const lines: string[] = [
           `[Tool Result — sandbox_read_file]`,
-          `File: ${call.args.path}`,
+          fileLabel,
           `Version: ${result.version || 'unknown'}`,
           result.truncated ? `(truncated)\n` : '',
-          result.content,
+          toolResultContent,
         ];
 
         // Guess language from extension
@@ -414,7 +460,7 @@ export async function executeSandboxToolCall(
             type: 'editor',
             data: {
               path: call.args.path,
-              content: result.content,
+              content: result.content, // Card gets clean content — no line numbers
               language,
               truncated: result.truncated,
               version: typeof result.version === 'string' ? result.version : undefined,
@@ -1369,7 +1415,7 @@ SANDBOX TOOLS — You have access to a code sandbox (persistent container with t
 
 Additional tools available when sandbox is active:
 - sandbox_exec(command, workdir?) — Run a shell command in the sandbox (default workdir: /workspace)
-- sandbox_read_file(path) — Read a single file from the sandbox filesystem. Only works on files — fails on directories.
+- sandbox_read_file(path, start_line?, end_line?) — Read a file from the sandbox filesystem. Only works on files — fails on directories. Use start_line/end_line to read a specific line range (1-indexed). When a range is specified, output includes line numbers for reference.
 - sandbox_search(query, path?) — Search file contents in the sandbox (uses rg/grep). Fast way to locate functions, symbols, and strings before editing.
 - sandbox_list_dir(path?) — List files and folders in a sandbox directory (default: /workspace). Use this to explore the project structure before reading specific files.
 - sandbox_write_file(path, content, expected_version?) — Write or overwrite a file in the sandbox. If expected_version is provided, stale writes are rejected.
@@ -1383,7 +1429,7 @@ Additional tools available when sandbox is active:
 - promote_to_github(repo_name, description?, private?) — Create a new GitHub repo under the authenticated user, set the sandbox git remote, and push current branch. Defaults to private=true.
 
 Compatibility aliases also work:
-- read_sandbox_file(path) → sandbox_read_file
+- read_sandbox_file(path, start_line?, end_line?) → sandbox_read_file
 - search_sandbox(query, path?) → sandbox_search
 - list_sandbox_dir(path?) → sandbox_list_dir
 
@@ -1401,7 +1447,7 @@ Sandbox rules:
 - The repo is cloned to /workspace — use that as the working directory
 - You can install packages, run tests, build, lint — anything you'd do in a terminal
 - For multi-step tasks (edit + test), use multiple tool calls in sequence
-- Prefer read → write flows for edits. Use expected_version from sandbox_read_file to avoid stale overwrites.
+- Prefer read → write flows for edits. Use expected_version from sandbox_read_file to avoid stale overwrites. For large files, use start_line/end_line to read only the relevant section before editing.
 ${BROWSER_RULES_BLOCK}- sandbox_diff shows what you've changed — review before committing
 - sandbox_prepare_commit triggers the Auditor for safety review, then presents a review card. The user approves or rejects via the UI.
 - If the push fails after a successful commit, use sandbox_push() to retry

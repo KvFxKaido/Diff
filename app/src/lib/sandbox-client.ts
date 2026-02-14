@@ -26,6 +26,10 @@ export interface FileReadResult {
   truncated: boolean;
   /** SHA-256 of full file content at read time */
   version?: string | null;
+  /** Normalized start line returned by backend for range reads */
+  start_line?: number;
+  /** End line returned by backend for bounded range reads */
+  end_line?: number;
 }
 
 export interface DiffResult {
@@ -290,12 +294,17 @@ export async function execInSandbox(
 export async function readFromSandbox(
   sandboxId: string,
   path: string,
+  startLine?: number,
+  endLine?: number,
 ): Promise<FileReadResult> {
-  return sandboxFetch<FileReadResult>('read', {
+  const body: Record<string, unknown> = {
     ...withOwnerToken({}),
     sandbox_id: sandboxId,
     path,
-  });
+  };
+  if (startLine !== undefined) body.start_line = startLine;
+  if (endLine !== undefined) body.end_line = endLine;
+  return sandboxFetch<FileReadResult>('read', body);
 }
 
 export interface WriteResult {
