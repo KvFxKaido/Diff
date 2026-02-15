@@ -124,7 +124,7 @@ export async function executeAnyToolCall(
 
     case 'web-search': {
       // Route through unified search: Tavily (if key set) → provider-native → DuckDuckGo free
-      const provider = getActiveProvider();
+      const provider = activeProvider || getActiveProvider();
       return executeWebSearch(toolCall.call.args.query, provider);
     }
 
