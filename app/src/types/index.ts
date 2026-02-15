@@ -131,6 +131,8 @@ export interface ToolMeta {
   toolName: string;
   /** Tool dispatch source ('github' | 'sandbox' | 'delegate' | 'scratchpad' | 'web-search'). */
   source: string;
+  /** Provider locked to the conversation when the tool was executed. */
+  provider?: AIProviderType;
   /** Wall-clock execution time in milliseconds. */
   durationMs: number;
   /** Whether the tool returned an error. */
